@@ -791,6 +791,140 @@
     border-color: #1E3223;
   }
 
+
+  /* === ご利用の注意モーダル === */
+  .info-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(31, 31, 28, 0.6);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .info-modal.show {
+    display: flex;
+    animation: fadeIn 0.3s ease;
+  }
+  .info-modal-content {
+    background: var(--bg);
+    max-width: 540px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: 8px;
+    border: 1px solid var(--gold);
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    position: relative;
+  }
+  .info-modal-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--gray);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    transition: color 0.2s;
+  }
+  .info-modal-close:hover {
+    color: var(--ink);
+  }
+  .info-modal-title {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--ink);
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+  }
+  .info-modal-title::before, .info-modal-title::after {
+    content: '◆';
+    color: var(--gold);
+    font-size: 8px;
+    margin: 0 12px;
+    vertical-align: middle;
+  }
+  .info-modal-subtitle {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 13px;
+    color: var(--gray);
+    text-align: center;
+    margin-bottom: 28px;
+    letter-spacing: 0.15em;
+  }
+  .info-section {
+    margin-bottom: 24px;
+  }
+  .info-section h3 {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gold-deep);
+    letter-spacing: 0.15em;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line-faint);
+  }
+  .info-section p, .info-section ul {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.9;
+    letter-spacing: 0.02em;
+  }
+  .info-section ul {
+    list-style: none;
+    padding: 0;
+  }
+  .info-section ul li {
+    padding-left: 16px;
+    position: relative;
+    margin-bottom: 4px;
+  }
+  .info-section ul li::before {
+    content: '·';
+    position: absolute;
+    left: 4px;
+    top: 0;
+    color: var(--gold);
+    font-weight: 600;
+  }
+  .info-section .highlight {
+    color: var(--gold-deep);
+    font-weight: 500;
+  }
+  .info-modal-foot {
+    text-align: center;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line-faint);
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 11px;
+    color: var(--gray);
+    letter-spacing: 0.2em;
+  }
+  /* フッターの「ご利用について」リンク */
+  footer .info-link {
+    display: inline-block;
+    margin: 0 16px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 11px;
+    color: var(--gray);
+    cursor: pointer;
+    letter-spacing: 0.15em;
+    transition: color 0.2s;
+  }
+  footer .info-link:hover {
+    color: var(--gold-deep);
+  }
+
   /* === マスターラウンジ === */
   .lounge {
     padding: 24px 0 48px;
@@ -1160,8 +1294,11 @@
 
   <footer>
     Teras Lab. <span class="dot">·</span> 180 days, together
-    <span class="reset-link" onclick="openLounge()" style="margin-right:16px;">master lounge</span>
-    <span class="reset-link" onclick="confirmReset()">reset progress</span>
+    <div style="margin-top: 16px;">
+      <span class="info-link" onclick="openInfoModal()">ご利用について</span>
+      <span class="info-link" onclick="openLounge()">master lounge</span>
+      <span class="info-link" onclick="confirmReset()">reset progress</span>
+    </div>
   </footer>
 </div>
 
@@ -1185,6 +1322,45 @@
     </div>
   </div>
   <div class="day-view-body container lounge" id="loungeBody"></div>
+</div>
+
+<!-- =================== ご利用の注意モーダル =================== -->
+<div class="info-modal" id="infoModal" onclick="if(event.target===this) closeInfoModal()">
+  <div class="info-modal-content">
+    <button class="info-modal-close" onclick="closeInfoModal()" aria-label="閉じる">×</button>
+    
+    <div class="info-modal-title">ご利用について</div>
+    <div class="info-modal-subtitle">— a few notes for your journey —</div>
+    
+    <div class="info-section">
+      <h3>進捗データの保存について</h3>
+      <p>このアプリの進捗・メモは、<span class="highlight">お使いのスマホ内に保存</span>されています。サーバーには送信していませんので、安心してお使いください。</p>
+    </div>
+    
+    <div class="info-section">
+      <h3>ご注意ください</h3>
+      <ul>
+        <li>Safariの<span class="highlight">データを全削除すると、進捗も消えます</span></li>
+        <li>機種変更時は<span class="highlight">引き継がれません</span></li>
+        <li>大切な節目は、スクショで残しておくと安心です</li>
+        <li>iPhoneでは <span class="highlight">Safari</span> でのご利用を推奨します</li>
+      </ul>
+    </div>
+    
+    <div class="info-section">
+      <h3>推奨の使い方</h3>
+      <p>Safariで開いたあと、<span class="highlight">「ホーム画面に追加」</span>すると、最も安定してアプリのように使えます。一度追加すれば、ホーム画面のアイコンから起動できます。</p>
+    </div>
+    
+    <div class="info-section">
+      <h3>もしアプリが開かないときは</h3>
+      <p>少し時間をおいて再度お試しください。<br>それでも開かない場合は、お気軽にSlackでお声がけください。</p>
+    </div>
+    
+    <div class="info-modal-foot">
+      Teras Lab. · 180 days, together
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1646,6 +1822,22 @@ function closeLounge() {
   renderDashboard();
   renderChapters();
 }
+
+// === ご利用の注意モーダル ===
+function openInfoModal() {
+  document.getElementById('infoModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeInfoModal() {
+  document.getElementById('infoModal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+// ESCキーで閉じる
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeInfoModal();
+  }
+});
 
 function renderLounge() {
   const body = document.getElementById('loungeBody');
