@@ -1,0 +1,24 @@
+{
+  "name": "Teras Lab. 180日の習慣設計",
+  "short_name": "Teras Lab.",
+  "description": "続ける、180日。",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FAFAF7",
+  "theme_color": "#FAFAF7",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
