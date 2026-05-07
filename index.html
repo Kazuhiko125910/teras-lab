@@ -706,6 +706,418 @@
     animation: fadeIn 0.6s ease forwards;
   }
   @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+
+  /* === メモ機能 === */
+  .memo-section {
+    margin-top: 24px;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid var(--line-faint);
+    border-radius: 6px;
+  }
+  .memo-section.editing {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
+  .memo-label {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 12px;
+    color: var(--gray);
+    letter-spacing: 0.2em;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .memo-label::before {
+    content: '◆';
+    color: var(--gold);
+    font-size: 8px;
+  }
+  .memo-display {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    color: var(--ink-soft);
+    line-height: 1.8;
+    white-space: pre-wrap;
+    cursor: text;
+    min-height: 24px;
+  }
+  .memo-display.empty {
+    color: var(--gray);
+    font-style: italic;
+  }
+  .memo-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    color: var(--ink);
+    line-height: 1.8;
+    resize: vertical;
+    min-height: 60px;
+  }
+  .memo-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    justify-content: flex-end;
+  }
+  .memo-btn {
+    background: none;
+    border: 1px solid var(--line);
+    padding: 6px 16px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 12px;
+    color: var(--ink-soft);
+    letter-spacing: 0.1em;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .memo-btn:hover {
+    border-color: var(--gold);
+    color: var(--gold-deep);
+  }
+  .memo-btn.primary {
+    background: var(--gold-deep);
+    color: #fff;
+    border-color: var(--gold-deep);
+  }
+  .memo-btn.primary:hover {
+    background: #1E3223;
+    border-color: #1E3223;
+  }
+
+  /* === マスターラウンジ === */
+  .lounge {
+    padding: 24px 0 48px;
+  }
+  .lounge-banner {
+    background: linear-gradient(135deg, #1E3223 0%, #2A4530 100%);
+    color: #fff;
+    padding: 48px 32px;
+    border-radius: 8px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 32px;
+    border: 1px solid var(--gold);
+  }
+  .lounge-banner::before, .lounge-banner::after {
+    content: '◆';
+    position: absolute;
+    color: var(--gold);
+    font-size: 12px;
+  }
+  .lounge-banner::before { top: 16px; left: 16px; }
+  .lounge-banner::after { top: 16px; right: 16px; }
+  .lounge-crown {
+    font-size: 32px;
+    margin-bottom: 16px;
+  }
+  .lounge-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 300;
+    font-size: 32px;
+    color: var(--gold);
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+  }
+  .lounge-subtitle {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    color: rgba(255,255,255,0.85);
+    letter-spacing: 0.2em;
+    margin-bottom: 20px;
+  }
+  .lounge-message {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    color: rgba(255,255,255,0.9);
+    line-height: 2;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .lounge-section {
+    margin: 56px 0 32px;
+  }
+  .lounge-section-title {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.25em;
+    color: var(--ink-soft);
+    text-align: center;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  .lounge-section-title::before, .lounge-section-title::after {
+    content: '◆';
+    color: var(--gold);
+    font-size: 10px;
+  }
+
+  /* バッジコレクション */
+  .badges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 16px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .badge-item {
+    text-align: center;
+    padding: 24px 12px;
+    background: #fff;
+    border: 1px solid var(--line-faint);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+  }
+  .badge-item.earned {
+    background: linear-gradient(180deg, var(--gold-pale) 0%, #fff 100%);
+    border-color: var(--gold);
+  }
+  .badge-icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+    filter: grayscale(1);
+    opacity: 0.3;
+  }
+  .badge-item.earned .badge-icon {
+    filter: none;
+    opacity: 1;
+  }
+  .badge-day {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 24px;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .badge-item.earned .badge-day {
+    color: var(--gold-deep);
+    font-weight: 500;
+  }
+  .badge-label {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 11px;
+    color: var(--gray);
+    letter-spacing: 0.15em;
+  }
+
+  /* 動画選択カード */
+  .picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .picker-card {
+    background: #fff;
+    border: 1px solid var(--line-faint);
+    border-radius: 8px;
+    padding: 24px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .picker-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(201, 169, 110, 0.15);
+  }
+  .picker-icon {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+  .picker-title {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .picker-desc {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 12px;
+    color: var(--gray);
+    line-height: 1.6;
+  }
+  .part-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .part-btn {
+    background: none;
+    border: 1px solid var(--line);
+    padding: 6px 14px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 12px;
+    color: var(--ink-soft);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .part-btn:hover {
+    border-color: var(--gold);
+    background: var(--gold-pale);
+    color: var(--gold-deep);
+  }
+
+  /* ライブラリ */
+  .library-filters {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+  .filter-btn {
+    background: none;
+    border: 1px solid var(--line);
+    padding: 6px 14px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 12px;
+    color: var(--ink-soft);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .filter-btn.active {
+    background: var(--gold-deep);
+    color: #fff;
+    border-color: var(--gold-deep);
+  }
+  .filter-btn:hover:not(.active) {
+    border-color: var(--gold);
+    color: var(--gold-deep);
+  }
+  .library-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .lib-item {
+    background: #fff;
+    border: 1px solid var(--line-faint);
+    border-radius: 4px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .lib-item:hover {
+    border-color: var(--gold);
+    background: var(--gold-pale);
+  }
+  .lib-item-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .lib-item-title {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 14px;
+    color: var(--ink);
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lib-item-meta {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 11px;
+    color: var(--gray);
+    letter-spacing: 0.05em;
+  }
+  .lib-item-meta .pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    margin-right: 4px;
+    font-size: 10px;
+  }
+  .lib-item-code {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 14px;
+    color: var(--gold-deep);
+    flex-shrink: 0;
+  }
+
+  /* メモログ（マスターラウンジ用） */
+  .memo-log {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .memo-log-item {
+    background: #fff;
+    border: 1px solid var(--line-faint);
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .memo-log-item:hover {
+    border-color: var(--gold);
+  }
+  .memo-log-day {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 16px;
+    color: var(--gold-deep);
+    margin-bottom: 6px;
+  }
+  .memo-log-text {
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    color: var(--ink-soft);
+    line-height: 1.7;
+    white-space: pre-wrap;
+  }
+  .memo-log-empty {
+    text-align: center;
+    color: var(--gray);
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    padding: 32px;
+    background: var(--bg-soft);
+    border-radius: 4px;
+  }
+
+  /* マスターラウンジ切替トグル */
+  .mode-toggle {
+    text-align: center;
+    margin: 32px 0;
+  }
+  .mode-toggle button {
+    background: none;
+    border: 1px solid var(--gold);
+    padding: 10px 24px;
+    font-family: 'Shippori Mincho', serif;
+    font-size: 13px;
+    color: var(--gold-deep);
+    letter-spacing: 0.15em;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .mode-toggle button:hover {
+    background: var(--gold);
+    color: #fff;
+  }
+
+  /* === END NEW CSS === */
 </style>
 </head>
 <body>
@@ -748,6 +1160,7 @@
 
   <footer>
     Teras Lab. <span class="dot">·</span> 180 days, together
+    <span class="reset-link" onclick="openLounge()" style="margin-right:16px;">master lounge</span>
     <span class="reset-link" onclick="confirmReset()">reset progress</span>
   </footer>
 </div>
@@ -761,6 +1174,17 @@
     </div>
   </div>
   <div class="day-view-body container" id="dayViewBody"></div>
+</div>
+
+<!-- =================== マスターラウンジビュー =================== -->
+<div class="day-view" id="loungeView">
+  <div class="day-view-header">
+    <div class="container top-bar">
+      <button class="back-btn" onclick="closeLounge()">← もどる</button>
+      <span class="progress">MASTER LOUNGE</span>
+    </div>
+  </div>
+  <div class="day-view-body container lounge" id="loungeBody"></div>
 </div>
 
 <script>
@@ -829,6 +1253,44 @@ function getLastDoneDay() {
   return days.length === 0 ? null : days[days.length - 1];
 }
 
+// === メモ機能 ===
+const MEMO_KEY = 'teraslab_memos_v1';
+function loadMemos() {
+  try {
+    const raw = localStorage.getItem(MEMO_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (e) { return {}; }
+}
+function saveMemo(day, text) {
+  const memos = loadMemos();
+  if (text && text.trim()) {
+    memos[day] = { text: text.trim(), ts: new Date().toISOString() };
+  } else {
+    delete memos[day];
+  }
+  try { localStorage.setItem(MEMO_KEY, JSON.stringify(memos)); } catch (e) {}
+}
+function getMemo(day) {
+  const memos = loadMemos();
+  return memos[day] || null;
+}
+function getAllMemos() {
+  const memos = loadMemos();
+  return Object.keys(memos).map(d => ({
+    day: parseInt(d),
+    ...memos[d]
+  })).filter(m => !isNaN(m.day)).sort((a, b) => a.day - b.day);
+}
+
+// === 完走判定とラウンジ ===
+function isAllDone() {
+  return getDoneCount() >= 180;
+}
+
+// 表示モードフラグ
+let viewMode = 'normal'; // 'normal' or 'lounge'
+
 // === 章ごとにDAYをグルーピング ===
 const chapters = [];
 let currentChapter = null;
@@ -885,6 +1347,9 @@ function renderDashboard() {
     statusHtml = `
       <div class="progress-status-line">180日、完走おめでとうございます 👑</div>
       <div class="progress-next-cta">あなたは、別人になりました。</div>
+      <div style="margin-top: 20px;">
+        <button class="complete-btn" onclick="openLounge()">マスターラウンジへ</button>
+      </div>
     `;
   } else {
     statusHtml = `
@@ -982,6 +1447,23 @@ function openDayView(dayNum) {
   
   const conceptMsg = CONCEPT_MSG[d.concept] || 'よく来た。今日もいっしょにやろう。';
   const isDone = isDayDone(d.day);
+  const memo = getMemo(d.day);
+  
+  // メモセクションHTML（完了済みのみ表示）
+  let memoSectionHtml = '';
+  if (isDone) {
+    memoSectionHtml = `
+      <div class="memo-section" id="memoSection">
+        <div class="memo-label">今日の一言メモ（任意）</div>
+        <div id="memoContent">
+          ${memo
+            ? `<div class="memo-display" onclick="startMemoEdit(${d.day})">${escapeHtml(memo.text)}</div>`
+            : `<div class="memo-display empty" onclick="startMemoEdit(${d.day})">クリックして、今日の感想を残せます</div>`
+          }
+        </div>
+      </div>
+    `;
+  }
   
   // 完了セクションの中身
   let completeSectionHtml = '';
@@ -1072,6 +1554,8 @@ function openDayView(dayNum) {
     
     ${completeSectionHtml}
     
+    ${memoSectionHtml}
+    
     <nav class="day-nav">
       <button class="nav-btn" onclick="openDayView(${d.day - 1})" ${d.day <= 1 ? 'disabled' : ''}>← 前の日</button>
       <button class="nav-btn" onclick="openDayView(${d.day + 1})" ${d.day >= 180 ? 'disabled' : ''}>次の日 →</button>
@@ -1092,6 +1576,301 @@ function closeDayView() {
   // ホームに戻ったらダッシュボードと章を再描画
   renderDashboard();
   renderChapters();
+}
+
+// === メモ編集 ===
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function startMemoEdit(day) {
+  const memo = getMemo(day);
+  const initialText = memo ? memo.text : '';
+  const container = document.getElementById('memoContent');
+  const section = document.getElementById('memoSection');
+  if (section) section.classList.add('editing');
+  container.innerHTML = `
+    <textarea class="memo-input" id="memoInput" placeholder="今日の身体の調子、気づき、気分など&#10;何でもどうぞ。後から振り返れます。">${escapeHtml(initialText)}</textarea>
+    <div class="memo-actions">
+      <button class="memo-btn" onclick="cancelMemoEdit(${day})">キャンセル</button>
+      <button class="memo-btn primary" onclick="saveMemoEdit(${day})">保存</button>
+    </div>
+  `;
+  setTimeout(() => {
+    const ta = document.getElementById('memoInput');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }, 0);
+}
+function saveMemoEdit(day) {
+  const text = document.getElementById('memoInput').value;
+  saveMemo(day, text);
+  refreshMemoDisplay(day);
+}
+function cancelMemoEdit(day) {
+  refreshMemoDisplay(day);
+}
+function refreshMemoDisplay(day) {
+  const section = document.getElementById('memoSection');
+  if (section) section.classList.remove('editing');
+  const container = document.getElementById('memoContent');
+  const memo = getMemo(day);
+  container.innerHTML = memo
+    ? `<div class="memo-display" onclick="startMemoEdit(${day})">${escapeHtml(memo.text)}</div>`
+    : `<div class="memo-display empty" onclick="startMemoEdit(${day})">クリックして、今日の感想を残せます</div>`;
+}
+
+// === マスターラウンジ ===
+const MILESTONES = [
+  { day: 7,   icon: '🎊', label: '1週間達成' },
+  { day: 30,  icon: '🌟', label: '1ヶ月達成' },
+  { day: 90,  icon: '💎', label: '折り返し' },
+  { day: 150, icon: '🏆', label: '5ヶ月達成' },
+  { day: 180, icon: '👑', label: '完走' },
+];
+
+let currentLibFilter = { part: 'all', level: 'all' };
+
+function openLounge() {
+  renderLounge();
+  document.getElementById('topView').style.display = 'none';
+  document.getElementById('dayView').classList.remove('show');
+  const view = document.getElementById('loungeView');
+  view.classList.add('show');
+  window.scrollTo(0, 0);
+  history.replaceState(null, '', '#lounge');
+}
+
+function closeLounge() {
+  document.getElementById('loungeView').classList.remove('show');
+  document.getElementById('topView').style.display = 'block';
+  history.replaceState(null, '', '#');
+  renderDashboard();
+  renderChapters();
+}
+
+function renderLounge() {
+  const body = document.getElementById('loungeBody');
+  const memos = getAllMemos();
+  const earnedDays = MILESTONES.filter(m => isDayDone(m.day));
+  
+  // バッジHTML
+  const badgesHtml = MILESTONES.map(m => {
+    const earned = isDayDone(m.day);
+    return `
+      <div class="badge-item ${earned ? 'earned' : ''}">
+        <div class="badge-icon">${m.icon}</div>
+        <div class="badge-day">DAY ${m.day}</div>
+        <div class="badge-label">${m.label}</div>
+      </div>
+    `;
+  }).join('');
+  
+  // メモログ
+  let memoLogHtml = '';
+  if (memos.length === 0) {
+    memoLogHtml = '<div class="memo-log-empty">まだメモはありません。<br>DAYページから「今日の一言メモ」を残せます。</div>';
+  } else {
+    memoLogHtml = memos.map(m => `
+      <div class="memo-log-item" onclick="closeLounge();setTimeout(()=>openDayView(${m.day}),100);">
+        <div class="memo-log-day">DAY ${m.day}</div>
+        <div class="memo-log-text">${escapeHtml(m.text)}</div>
+      </div>
+    `).join('');
+  }
+  
+  body.innerHTML = `
+    <div class="lounge-banner fade-in">
+      <div class="lounge-crown">👑</div>
+      <div class="lounge-title">Master Lounge</div>
+      <div class="lounge-subtitle">— 180日を、走り抜けた人へ —</div>
+      <p class="lounge-message">
+        180日、よくここまで来てくれた。<br>
+        ここからは、自分のペースで続けよう。<br>
+        身体は、もうあなたを覚えている。
+      </p>
+    </div>
+    
+    <section class="lounge-section">
+      <div class="lounge-section-title">ACHIEVEMENT BADGES</div>
+      <div class="badges-grid">${badgesHtml}</div>
+    </section>
+    
+    <section class="lounge-section">
+      <div class="lounge-section-title">TODAY'S PRACTICE</div>
+      <div class="picker-grid">
+        <div class="picker-card" onclick="pickRecommended()">
+          <div class="picker-icon">🌿</div>
+          <div class="picker-title">今日のおすすめ</div>
+          <div class="picker-desc">曜日に合わせて<br>選んでおきました</div>
+        </div>
+        <div class="picker-card" onclick="pickRandom()">
+          <div class="picker-icon">🎲</div>
+          <div class="picker-title">おまかせ</div>
+          <div class="picker-desc">何も考えず<br>身を任せたい日に</div>
+        </div>
+        <div class="picker-card">
+          <div class="picker-icon">🎯</div>
+          <div class="picker-title">部位から選ぶ</div>
+          <div class="picker-desc">気になるところを<br>ピンポイントで</div>
+          <div class="part-buttons">
+            <button class="part-btn" onclick="pickByPart('上半身')">上半身</button>
+            <button class="part-btn" onclick="pickByPart('下半身')">下半身</button>
+            <button class="part-btn" onclick="pickByPart('体幹')">体幹</button>
+            <button class="part-btn" onclick="pickByPart('全身')">全身</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <section class="lounge-section">
+      <div class="lounge-section-title">VIDEO LIBRARY</div>
+      <div class="library-filters" id="libFilters">
+        ${renderLibFilters()}
+      </div>
+      <div class="library-list" id="libList">
+        ${renderLibList()}
+      </div>
+    </section>
+    
+    <section class="lounge-section">
+      <div class="lounge-section-title">YOUR JOURNEY NOTES</div>
+      <div class="memo-log">${memoLogHtml}</div>
+    </section>
+  `;
+}
+
+function renderLibFilters() {
+  const parts = ['all', '上半身', '下半身', '体幹', '全身'];
+  const levels = ['all', '軽め', '中', 'しっかり'];
+  return `
+    <div style="margin-bottom:8px; width:100%;">
+      ${parts.map(p => `
+        <button class="filter-btn ${currentLibFilter.part === p ? 'active' : ''}" 
+                onclick="setLibFilter('part', '${p}')">${p === 'all' ? 'すべて部位' : p}</button>
+      `).join('')}
+    </div>
+    <div style="width:100%;">
+      ${levels.map(l => `
+        <button class="filter-btn ${currentLibFilter.level === l ? 'active' : ''}" 
+                onclick="setLibFilter('level', '${l}')">${l === 'all' ? 'すべて強度' : l}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function setLibFilter(type, value) {
+  currentLibFilter[type] = value;
+  document.getElementById('libFilters').innerHTML = renderLibFilters();
+  document.getElementById('libList').innerHTML = renderLibList();
+}
+
+function renderLibList() {
+  // 全動画を取得（重複排除）
+  const videoMap = {};
+  PROGRAM_DATA.forEach(d => {
+    if (d.main && !videoMap[d.main.code]) videoMap[d.main.code] = d.main;
+    if (d.sub && !videoMap[d.sub.code]) videoMap[d.sub.code] = d.sub;
+  });
+  
+  let videos = Object.values(videoMap);
+  
+  // フィルタ適用
+  if (currentLibFilter.part !== 'all') {
+    videos = videos.filter(v => v.part === currentLibFilter.part);
+  }
+  if (currentLibFilter.level !== 'all') {
+    videos = videos.filter(v => v.level === currentLibFilter.level);
+  }
+  
+  videos.sort((a, b) => a.code.localeCompare(b.code));
+  
+  if (videos.length === 0) {
+    return '<div class="memo-log-empty">該当する動画が見つかりません。</div>';
+  }
+  
+  return videos.map(v => `
+    <div class="lib-item" onclick="playLibVideo('${v.code}')">
+      <div class="lib-item-info">
+        <div class="lib-item-title">${escapeHtml(v.title || '無題')}</div>
+        <div class="lib-item-meta">
+          <span class="pill">${v.part}</span>
+          <span class="pill">${v.level}</span>
+          <span>${v.sec}秒</span>
+        </div>
+      </div>
+      <div class="lib-item-code">${v.code}</div>
+    </div>
+  `).join('');
+}
+
+// 動画選択ロジック
+function getAllVideos() {
+  const videoMap = {};
+  PROGRAM_DATA.forEach(d => {
+    if (d.main && !videoMap[d.main.code]) videoMap[d.main.code] = d.main;
+    if (d.sub && !videoMap[d.sub.code]) videoMap[d.sub.code] = d.sub;
+  });
+  return Object.values(videoMap);
+}
+
+function pickRecommended() {
+  // 曜日でローテ：月=上半身、火=下半身、水=体幹、木=全身、金=上半身、土=下半身、日=全身
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const partMap = ['全身', '上半身', '下半身', '体幹', '全身', '上半身', '下半身'];
+  const targetPart = partMap[dow];
+  pickByPart(targetPart);
+}
+
+function pickRandom() {
+  const videos = getAllVideos();
+  if (videos.length === 0) return;
+  const v = videos[Math.floor(Math.random() * videos.length)];
+  showLibVideoModal(v);
+}
+
+function pickByPart(part) {
+  const videos = getAllVideos().filter(v => v.part === part);
+  if (videos.length === 0) {
+    alert('該当する動画がありません');
+    return;
+  }
+  const v = videos[Math.floor(Math.random() * videos.length)];
+  showLibVideoModal(v);
+}
+
+function playLibVideo(code) {
+  const videos = getAllVideos();
+  const v = videos.find(x => x.code === code);
+  if (v) showLibVideoModal(v);
+}
+
+function showLibVideoModal(v) {
+  // ラウンジ内の動画再生は、画面遷移なしでオーバーレイ表示
+  const overlay = document.createElement('div');
+  overlay.className = 'day-view show';
+  overlay.style.background = 'rgba(0,0,0,0.92)';
+  overlay.innerHTML = `
+    <div class="day-view-header" style="background:transparent;border:none;">
+      <div class="container top-bar">
+        <button class="back-btn" style="color:#fff;" onclick="this.closest('.day-view').remove()">← とじる</button>
+        <span class="progress" style="color:#fff;">${v.code}</span>
+      </div>
+    </div>
+    <div class="day-view-body container">
+      <div style="text-align:center; margin-bottom: 24px;">
+        <h3 class="video-title" style="color:#fff;">${escapeHtml(v.title || '')}</h3>
+        <div class="video-meta" style="color:rgba(255,255,255,0.7);">
+          <span class="pill" style="border-color:rgba(255,255,255,0.3);color:#fff;">${v.part}</span>
+          <span class="pill" style="border-color:rgba(255,255,255,0.3);color:#fff;">${v.level}</span>
+          <span style="margin-left:8px;">${v.sec}秒</span>
+        </div>
+      </div>
+      <div class="video-frame">
+        <iframe src="${toVimeoEmbed(v.link)}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
 }
 
 function markComplete(day) {
@@ -1116,6 +1895,10 @@ function confirmReset() {
 }
 
 function handleHash() {
+  if (location.hash === '#lounge') {
+    openLounge();
+    return;
+  }
   const m = location.hash.match(/^#day(\d+)$/);
   if (m) {
     const dayNum = parseInt(m[1], 10);
