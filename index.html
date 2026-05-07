@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Teras Lab.">
-<meta name="theme-color" content="#FAFAF7">
+<meta name="theme-color" content="#1E3223">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
@@ -29,6 +29,9 @@
     --gray:      #8A8A82;
     --line:      #D9D6CD;
     --line-faint:#ECEAE3;
+    --gold:      #C9A96E;
+    --gold-deep: #A88B52;
+    --gold-pale: #F5EFE0;
   }
   *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
   html { scroll-behavior: smooth; }
@@ -60,9 +63,17 @@
   .brand-mark {
     display: inline-block;
     width: 8px; height: 8px;
-    background: var(--sage);
+    background: var(--gold);
     border-radius: 50%;
     transform: translateY(-2px);
+  }
+  /* ブランド名の左右に金の細線装飾 */
+  .brand::before, .brand::after {
+    content: '';
+    width: 32px; height: 1px;
+    background: var(--gold);
+    align-self: center;
+    opacity: 0.6;
   }
   .brand-name {
     font-family: 'Cormorant Garamond', serif;
@@ -101,9 +112,16 @@
   .intro-tagline {
     font-family: 'Shippori Mincho', serif;
     font-size: 16px;
-    color: var(--sage-deep);
+    color: var(--gold-deep);
     letter-spacing: 0.15em;
     margin-top: 20px;
+  }
+  .intro-tagline::before, .intro-tagline::after {
+    content: '◆';
+    color: var(--gold);
+    font-size: 8px;
+    margin: 0 12px;
+    vertical-align: middle;
   }
   .intro-line {
     font-family: 'Shippori Mincho', serif;
@@ -168,7 +186,7 @@
     font-family: 'Cormorant Garamond', serif;
     font-weight: 400;
     font-size: clamp(28px, 5vw, 36px);
-    color: var(--ink);
+    color: var(--gold-deep);
     line-height: 1;
     margin-bottom: 6px;
   }
@@ -200,7 +218,7 @@
   .progress-bar-label .pct {
     font-family: 'Cormorant Garamond', serif;
     font-size: 16px;
-    color: var(--sage-deep);
+    color: var(--gold-deep);
     letter-spacing: 0;
   }
   .progress-bar {
@@ -212,7 +230,7 @@
   }
   .progress-bar-fill {
     height: 100%;
-    background: var(--sage);
+    background: linear-gradient(90deg, var(--sage), var(--gold));
     border-radius: 2px;
     transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   }
@@ -237,22 +255,22 @@
     margin-bottom: 32px;
   }
   .chapter-section h2::before {
-    content: '';
-    display: inline-block;
-    width: 24px; height: 1px;
-    background: var(--sage);
+    content: '◆';
+    color: var(--gold);
+    font-size: 10px;
+    margin-right: 14px;
     vertical-align: middle;
-    margin-right: 16px;
     transform: translateY(-2px);
+    display: inline-block;
   }
   .chapter-section h2::after {
-    content: '';
-    display: inline-block;
-    width: 24px; height: 1px;
-    background: var(--sage);
+    content: '◆';
+    color: var(--gold);
+    font-size: 10px;
+    margin-left: 14px;
     vertical-align: middle;
-    margin-left: 16px;
     transform: translateY(-2px);
+    display: inline-block;
   }
   .chapter-meta {
     text-align: center;
@@ -336,12 +354,12 @@
   }
   /* 今日（次にやるべきDAY）のセル */
   .day-cell.next {
-    border: 2px solid var(--sage-deep);
+    border: 2px solid var(--gold);
     background: #fff;
-    color: var(--sage-deep);
+    color: var(--gold-deep);
     font-weight: 600;
     transform: scale(1.05);
-    box-shadow: 0 4px 12px rgba(122, 138, 110, 0.18);
+    box-shadow: 0 4px 12px rgba(201, 169, 110, 0.25);
     z-index: 1;
   }
   .day-cell.next::before {
@@ -350,7 +368,7 @@
     top: -4px; left: 50%;
     transform: translateX(-50%);
     width: 6px; height: 6px;
-    background: var(--sage-deep);
+    background: var(--gold);
     border-radius: 50%;
   }
   
@@ -474,6 +492,7 @@
     font-family: 'Shippori Mincho', serif;
     font-size: 12px;
     letter-spacing: 0.2em;
+    border: 1px solid var(--gold);
   }
   .day-done-badge::before {
     content: '✓';
@@ -564,9 +583,9 @@
     line-height: 2;
   }
   .complete-btn {
-    background: var(--sage-deep);
+    background: #1E3223;
     color: #fff;
-    border: none;
+    border: 1px solid var(--gold);
     padding: 18px 48px;
     font-family: 'Shippori Mincho', serif;
     font-size: 17px;
@@ -575,12 +594,13 @@
     border-radius: 999px;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 16px rgba(122, 138, 110, 0.25);
+    box-shadow: 0 4px 16px rgba(30, 50, 35, 0.3);
+    position: relative;
   }
   .complete-btn:hover {
-    background: var(--ink);
+    background: #2A4530;
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(122, 138, 110, 0.35);
+    box-shadow: 0 6px 20px rgba(30, 50, 35, 0.4);
   }
   .complete-btn:active { transform: translateY(0); }
   .complete-undo {

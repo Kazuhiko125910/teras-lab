@@ -4,8 +4,8 @@
   "description": "続ける、180日。",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#FAFAF7",
-  "theme_color": "#FAFAF7",
+  "background_color": "#1E3223",
+  "theme_color": "#1E3223",
   "orientation": "portrait",
   "icons": [
     {
