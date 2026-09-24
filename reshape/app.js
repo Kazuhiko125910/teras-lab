@@ -451,6 +451,11 @@ async function autoFit(src) {
   const shoulderY = (py(11) + py(12)) / 2, noseY = py(0);
   const headTop = Math.min(...[0, 1, 2, 3, 4, 5, 6, 7, 8].map(py)) - Math.max(0, shoulderY - noseY) * 0.75;
   const footY = Math.max(...[27, 28, 29, 30, 31, 32].map(py));
+  const feetOk = [27, 28].some(i => (L[i].visibility ?? 1) > 0.5 && L[i].y < 1.02) && footY <= src.height * 1.02;
+  if (!feetOk) { // 足先が写っていないときは、腰の真ん中を中央線にそろえるだけ
+    const f = fitWhole(src), hx = (px(23) + px(24)) / 2;
+    return { sc: f.sc, tx: AL.W / 2 - f.sc * hx, ty: f.ty, partial: true };
+  }
   const cx = (px(27) + px(28)) / 2;
   const h = footY - headTop;
   if (!(h > 20)) return null;
@@ -494,7 +499,7 @@ function alignPhoto(src, side) {
     const setScale = (ns, cx = AL.W / 2, cy = AL.H / 2) => { ns = Math.max(base * 0.5, Math.min(base * 2, ns)); t.tx = cx - (cx - t.tx) * ns / t.sc; t.ty = cy - (cy - t.ty) * ns / t.sc; t.sc = ns; z.value = (t.sc / base).toFixed(2); draw(); };
     const runAuto = async () => {
       msg.textContent = '自動で位置を合わせています…（初回は少し時間がかかります）';
-      try { const a = await autoFit(src); if (a) { t = a; base = a.sc; z.value = 1; msg.textContent = '自動で合わせました。ずれていたら指で動かして調整してください。'; } else { msg.textContent = '体を見つけられませんでした。指で動かして合わせてください。'; } }
+      try { const a = await autoFit(src); if (a) { t = a; base = a.sc; z.value = 1; msg.textContent = a.partial ? '足先まで写っていないため、横の位置だけ合わせました。頭から足先まで入れて撮り直すのがおすすめです。' : '自動で合わせました。ずれていたら指で動かして調整してください。'; } else { msg.textContent = '体を見つけられませんでした。指で動かして合わせてください。'; } }
       catch (e) { msg.textContent = '自動で合わせられませんでした。指で動かして合わせてください。'; }
       draw();
     };
