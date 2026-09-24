@@ -365,3 +365,10 @@ nav.tabs button[aria-current="page"]{color:var(--primary)}
 .align-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .align-btns .btn{padding:12px 10px;font-size:14px;text-align:center}
 .align-btns [data-al="ok"]{grid-column:1/-1}
+/* 道のり：週ごとの動画 */
+.wk-lec{margin-top:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.wk-lec summary{cursor:pointer;padding:9px 12px;font-size:13px;font-weight:700;color:var(--primary);list-style-position:inside}
+.wk-lec .lec{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:9px 12px;border-top:1px solid var(--line)}
+.wk-lec .lt{font-size:13px;line-height:1.5}
+.wk-lec .lt small{display:block;font-size:11px;color:var(--muted)}
+.wk-lec .lock{font-size:11px;color:var(--faint);white-space:nowrap}

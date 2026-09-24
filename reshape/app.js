@@ -545,7 +545,11 @@ function vMap() {
     const ms = msFor(r.milestone);
     const miss = mi.filter(l => l.week === r.week).length;
     h += `<div class="wkrow ${r.week < S.week ? 'past' : r.week === S.week ? 'now' : ''}"><div class="n">${r.week === 0 ? '準備' : 'W' + r.week}</div><div><div class="th">${esc(r.theme)}${r.week === S.week ? '　<span class="pill warn">今週</span>' : ''}${miss ? '　<span class="pill bad">未視聴 ' + miss + '</span>' : ''}</div>
-      <div class="mi">${r.train.length ? 'トレ ' + esc(r.freq) + '：' + esc(r.train.join('・')) : ''}${lecs.length ? '<br>動画 ' + lecs.map(l => esc(l.code)).join('・') : ''}${ms.length ? '<br>★ ' + esc(ms.join('／')) : ''}</div></div></div>`;
+      <div class="mi">${r.train.length ? 'トレ ' + esc(r.freq) + '：' + esc(r.train.join('・')) : ''}${ms.length ? '<br>★ ' + esc(ms.join('／')) : ''}</div>
+      ${lecs.length ? `<details class="wk-lec"${miss || r.week === S.week ? ' open' : ''}><summary>動画 ${lecs.length}本${miss ? '（未視聴 ' + miss + '）' : ''}</summary>${lecs.map(l => {
+        const seen = S.watched.has(l.code), open = r.week <= S.week && l.link;
+        return `<div class="lec"><div class="lt"><span class="code">${esc(l.code)}</span>${esc(l.title)}<small>${esc(l.kind)}${l.min ? '・' + l.min + '分' : ''}</small></div>${seen ? `<span class="pill good">見た</span>` : ''}${open ? `<a class="play" href="${esc(l.link)}" target="_blank" rel="noopener" data-watch="${esc(l.code)}">▶ 見る</a>` : `<span class="lock">${l.link ? 'W' + r.week + 'で公開' : '準備中'}</span>`}</div>`;
+      }).join('')}</details>` : ''}</div></div>`;
   });
   const dict = ch => C().lectures.filter(l => l.kind === '辞書' && l.code.startsWith(ch + '-')).map(l => `<a href="${esc(l.link)}" target="_blank" rel="noopener"><b>${esc(l.code)}</b>${esc(l.title.replace(/^.*?（|）$/g, ''))}</a>`).join('');
   const opt = C().lectures.filter(l => l.kind === '任意');
@@ -626,7 +630,7 @@ async function saveGoal() {
 }
 
 // ---------- 記録の保存 ----------
-async function saveDay() {
+async function saveDay(quiet) {
   if (S.busy) return;
   const P = S.P || plan(S.day);
   const f = S.form;
@@ -641,7 +645,8 @@ async function saveDay() {
     const i = S.data.records.findIndex(r => r.date === rec.date); if (i >= 0) S.data.records[i] = rec; else S.data.records.push(rec);
     watched.forEach(c => S.watched.add(c));
     const first = !f.saved; f.saved = true; S.busy = false; route();
-    if (first) celebrate();
+    if (quiet) toast(quiet);
+    else if (first) celebrate();
     else toast('今日の記録を更新しました');
   } catch (e) { S.busy = false; route(); toast('保存できませんでした。通信を確認してもう一度押してください'); }
 }
@@ -661,6 +666,8 @@ function burst() {
 
 // ---------- 操作 ----------
 document.addEventListener('click', async e => {
+  const w = e.target.closest('[data-watch]');
+  if (w && S.form && !S.watched.has(w.dataset.watch)) { S.form.checks['l' + w.dataset.watch] = true; setTimeout(() => saveDay('「' + w.dataset.watch + '」を見た動画として記録しました'), 300); }
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.v) { S.view = t.dataset.v; route(); scrollTo(0, 0); return; }
   if (t.dataset.k) { S.form.checks[t.dataset.k] = !S.form.checks[t.dataset.k]; route(); return; }
