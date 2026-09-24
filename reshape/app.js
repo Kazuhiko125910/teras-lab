@@ -449,11 +449,13 @@ function vMap() {
 // ---------- 食事 ----------
 function vMeal() {
   const vip = S.data.member.plan === 'VIP';
+  S.chat[0].t = vip ? 'こんにちは、食事サポートです🍚\n食べたものの写真か、内容を送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。'
+    : 'こんにちは、食事サポートです🍚\n食べたものや、迷っていることを文章で送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。';
   return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>食事サポート</h2><span class="aside">LINEのメニューからも開けます</span></div>
   ${vip && S.week >= 9 ? '<div class="support" style="margin:0 0 10px"><b>VIP特典：食事写真へのフィードバック</b>送った食事写真に、加藤からもコメントが届きます。</div>' : ''}
   <div class="card"><div class="chat" id="chat">${S.chat.map(m => `<div class="msg ${m.r}">${m.img ? `<img src="${m.img}" alt="送った食事の写真">` : ''}${esc(m.t)}</div>`).join('')}${S.busy ? '<div class="msg bot">…</div>' : ''}</div>
   <div class="quick">${['朝ごはんを送る', 'コンビニで選ぶなら？', '間食したくなったら'].map(q => `<button type="button" data-q="${q}">${q}</button>`).join('')}</div>
-  <form class="composer" id="meal-form"><label for="meal-img" aria-label="写真を送る">${icCam}</label><input type="file" id="meal-img" accept="image/*"><input type="text" id="meal-txt" placeholder="例：鮭おにぎり、ゆで卵、サラダ" autocomplete="off"><button type="submit" class="send" aria-label="送信"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7z"/></svg></button></form></div>
+  <form class="composer" id="meal-form">${vip ? `<label for="meal-img" aria-label="写真を送る">${icCam}</label><input type="file" id="meal-img" accept="image/*">` : ''}<input type="text" id="meal-txt" placeholder="例：鮭おにぎり、ゆで卵、サラダ" autocomplete="off"><button type="submit" class="send" aria-label="送信"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7z"/></svg></button></form></div>
   <p style="font-size:12px;color:var(--muted)">返信はAIによる目安です。持病や服薬、強い痛みがある場合は担当か主治医に相談してください。</p></section>`;
 }
 async function sendMeal(text, img) {
