@@ -26,12 +26,13 @@
 6. チャネルを「公開済み」にする（開発中のままだと本人以外ログインできません）
 
 ## 3. サイトに設定を入れる
-`config.js` の `GAS_URL` に 1-5 のURL、`LIFF_ID` に 2-5 のIDを入れる。
+設定済み（GAS_URL／LIFF_ID `2011731827-ZLDHlKTg`）。LINEログインのチャネルIDは `2011731827`。
 
-## 4. リッチメニュー（エルメまたはLINE公式アカウントの管理画面）
-- 「今日の記録」：`https://liff.line.me/（LIFF ID）`
-- 「食事サポート」：`https://liff.line.me/（LIFF ID）?v=meal`
-- 「記録を見る」：`https://liff.line.me/（LIFF ID）?v=log`
+## 4. リッチメニュー（LINE Official Account Manager「Teras Lab. RESHAPE」／小・3分割）
+- メニューバー：▼ RESHAPE メニュー
+- 左「今日のメニュー」：`https://liff.line.me/2011731827-ZLDHlKTg`
+- 中央「食事サポート」：`https://liff.line.me/2011731827-ZLDHlKTg?v=meal`
+- 右「記録と変化」：`https://liff.line.me/2011731827-ZLDHlKTg?v=log`
 
 ## 5. 管理者ページ
 `https://kazuhiko125910.github.io/teras-lab/reshape/admin.html` を開き、合言葉（ADMIN_KEY）を入れる。
