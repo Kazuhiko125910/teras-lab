@@ -1,0 +1,433 @@
+/**
+ * Teras Lab. RESHAPE \u2014 \u88cf\u5074\u306e\u30d7\u30ed\u30b0\u30e9\u30e0\uff08Google Apps Script\uff09
+ *
+ * \u7f6e\u304d\u5834\u6240\uff1a\u904b\u55b6\u7528\u30b9\u30d7\u30ec\u30c3\u30c9\u30b7\u30fc\u30c8\u300cTeras_Lab_RESHAPE\u300d\u306e \u62e1\u5f35\u6a5f\u80fd \u2192 Apps Script
+ * \u521d\u56de\u3060\u3051\uff1a\u95a2\u6570\u300csetup\u300d\u3092\u5b9f\u884c \u2192 \u30a6\u30a7\u30d6\u30a2\u30d7\u30ea\u3068\u3057\u3066\u30c7\u30d7\u30ed\u30a4
+ *
+ * \u30b9\u30af\u30ea\u30d7\u30c8\u30d7\u30ed\u30d1\u30c6\u30a3\uff08\u30d7\u30ed\u30b8\u30a7\u30af\u30c8\u306e\u8a2d\u5b9a \u2192 \u30b9\u30af\u30ea\u30d7\u30c8 \u30d7\u30ed\u30d1\u30c6\u30a3\uff09
+ *   LINE_CHANNEL_ID   \u2026 LINE\u30ed\u30b0\u30a4\u30f3\u306e\u30c1\u30e3\u30cd\u30ebID\uff08\u6570\u5b57\uff09
+ *   ADMIN_KEY         \u2026 \u7ba1\u7406\u8005\u30da\u30fc\u30b8\u306e\u5408\u8a00\u8449\uff08\u52a0\u85e4\u3055\u3093\u304c\u81ea\u5206\u3067\u6c7a\u3081\u308b\uff09
+ *   ANTHROPIC_API_KEY \u2026 \u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u306b\u4f7f\u3046AI\u306e\u30ad\u30fc\uff08\u52a0\u85e4\u3055\u3093\u304c\u81ea\u5206\u3067\u5165\u529b\uff09
+ *   PHOTO_FOLDER_ID   \u2026 setup \u3067\u81ea\u52d5\u4f5c\u6210\uff08\u59ff\u52e2\u5199\u771f\u306e\u4fdd\u5b58\u5148\u30d5\u30a9\u30eb\u30c0\uff09
+ */
+
+const TZ = 'Asia/Tokyo';
+const SOURCE_180DAY_ID = '1jRhfGPH2k3RBxXAUSmE5n5QETlXbu_eAlw9JUzHtkXM'; // 180\u65e5\u30d7\u30ed\u30b0\u30e9\u30e0\uff08\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1\u306e\u5272\u308a\u5f53\u3066\u5143\uff09
+const SOURCE_180DAY_GID = 1146111468;
+const MEAL_MODEL = 'claude-haiku-4-5-20251001';
+const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // \u904b\u55b6\u7528\u30b9\u30d7\u30ec\u30c3\u30c9\u30b7\u30fc\u30c8 Teras_Lab_RESHAPE
+
+const SH = {
+  member: '\u4f1a\u54e1', record: '\u6bce\u65e5\u306e\u8a18\u9332', photo: '\u59ff\u52e2\u5199\u771f', meal: '\u98df\u4e8b',
+  video: '\u52d5\u753b\u30de\u30b9\u30bf\u30fc', lecture: '\u8b1b\u7fa9\u30de\u30b9\u30bf\u30fc', roadmap: '26\u9031\u30ed\u30fc\u30c9\u30de\u30c3\u30d7', daily: '\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1'
+};
+
+// ============ \u5165\u53e3 ============
+function doGet() {
+  return json_({ ok: true, app: 'Teras Lab. RESHAPE', time: now_() });
+}
+
+function doPost(e) {
+  let req;
+  try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad_request' }); }
+  try {
+    const a = req.action;
+    if (a === 'admin') return json_(adminData_(req));
+    if (a === 'adminPhoto') return json_(adminPhoto_(req));
+    const me = identify_(req); // {id, name, demo}
+    if (a === 'boot') return json_(boot_(me, req));
+    if (a === 'saveDay') return json_(saveDay_(me, req));
+    if (a === 'saveGoal') return json_(saveGoal_(me, req));
+    if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
+    if (a === 'getPhoto') return json_(getPhoto_(me, req));
+    if (a === 'meal') return json_(meal_(me, req));
+    return json_({ ok: false, error: 'unknown_action' });
+  } catch (err) {
+    return json_({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ============ \u672c\u4eba\u78ba\u8a8d\uff08LINE\u30ed\u30b0\u30a4\u30f3\uff09 ============
+function identify_(req) {
+  if (req.demo) {
+    const id = String(req.demo);
+    if (!/^SAMPLE-/.test(id)) throw new Error('demo_not_allowed');
+    return { id: id, name: '', demo: true };
+  }
+  if (!req.idToken) throw new Error('no_token');
+  const channelId = prop_('LINE_CHANNEL_ID');
+  if (!channelId) throw new Error('LINE_CHANNEL_ID \u304c\u672a\u8a2d\u5b9a\u3067\u3059');
+  const cache = CacheService.getScriptCache();
+  const key = 'tok_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, req.idToken)).slice(0, 40);
+  const hit = cache.get(key);
+  if (hit) return JSON.parse(hit);
+  const res = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/verify', {
+    method: 'post', payload: { id_token: req.idToken, client_id: channelId }, muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) throw new Error('login_expired');
+  const v = JSON.parse(res.getContentText());
+  const me = { id: v.sub, name: v.name || '', demo: false };
+  cache.put(key, JSON.stringify(me), 600);
+  return me;
+}
+
+// ============ \u8d77\u52d5\u6642\u306e\u30c7\u30fc\u30bf ============
+function boot_(me, req) {
+  const members = table_(SH.member);
+  let m = members.rows.find(r => String(r['\u4f1a\u54e1ID']) === me.id);
+  if (!m) {
+    if (me.demo) throw new Error('sample_not_found');
+    // \u306f\u3058\u3081\u3066\u958b\u3044\u305f\u4eba\uff1a\u627f\u8a8d\u5f85\u3061\u3068\u3057\u3066\u767b\u9332
+    const name = String(req.displayName || me.name || '');
+    appendRow_(SH.member, { '\u4f1a\u54e1ID': me.id, '\u540d\u524d': name, 'LINE\u8868\u793a\u540d': name, '\u5229\u7528': '\u627f\u8a8d\u5f85\u3061', '\u30e1\u30e2': '\u81ea\u52d5\u767b\u9332 ' + now_() });
+    m = table_(SH.member).rows.find(r => String(r['\u4f1a\u54e1ID']) === me.id);
+  }
+  return {
+    ok: true,
+    today: fmtDate_(new Date()),
+    member: memberOut_(m),
+    records: table_(SH.record).rows.filter(r => String(r['\u4f1a\u54e1ID']) === me.id).map(recordOut_),
+    photos: table_(SH.photo).rows.filter(r => String(r['\u4f1a\u54e1ID']) === me.id).map(photoOut_),
+    content: content_()
+  };
+}
+
+function memberOut_(r) {
+  const goals = [1, 2, 3].map(i => ({
+    label: String(r['\u5352\u696d\u76ee\u6a19' + i] || ''),
+    start: num_(r['\u76ee\u6a19' + i + ' \u30b9\u30bf\u30fc\u30c8']),
+    target: num_(r['\u76ee\u6a19' + i + ' \u76ee\u6a19\u5024'])
+  })).filter(g => g.label);
+  return {
+    id: String(r['\u4f1a\u54e1ID']), name: String(r['\u540d\u524d'] || ''), plan: String(r['\u30d7\u30e9\u30f3'] || ''), status: String(r['\u5229\u7528'] || ''),
+    zoomAt: fmtDateTime_(r['\u6b21\u306eZoom']), zoomLink: String(r['\u6b21\u306eZoom\u30ea\u30f3\u30af\uff08VIP\u306e\u307f\uff09'] || ''),
+    coach: String(r['\u62c5\u5f53\u304b\u3089\u306e\u3072\u3068\u3053\u3068'] || ''),
+    paid: fmtDate_(r['\u652f\u6255\u65e5\uff08\u8d77\u7b97\u65e5\uff09']), start: fmtDate_(r['\u958b\u59cb\u65e5\uff08DAY1\uff09']),
+    end3: fmtDate_(r['3\u30f6\u6708\u306e\u65e5\uff08\u652f\u6255\u65e5\u304b\u3089\uff09']), end6: fmtDate_(r['6\u30f6\u6708\u306e\u65e5\uff08\u652f\u6255\u65e5\u304b\u3089\uff09']),
+    extension: String(r['\u5ef6\u9577\u5e0c\u671b'] || ''), community: String(r['\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b'] || ''),
+    goal: {
+      scene: String(r['6\u30f6\u6708\u5f8c\u306e\u7406\u60f3\u306e\u5834\u9762\uff08MY GOAL\uff09'] || ''), needs: String(r['\u304a\u60a9\u307f'] || ''),
+      top: String(r['\u4e00\u756a\u89e3\u6c7a\u3057\u305f\u3044\u3053\u3068'] || ''), why: String(r['\u5909\u308f\u308a\u305f\u3044\u7406\u7531'] || ''), ifnot: String(r['\u3053\u306e\u307e\u307e\u3060\u30681\u5e74\u5f8c'] || ''),
+      when: String(r['\u3084\u308b\u6642\u9593\u30fb\u5834\u6240'] || ''), plan: String(r['\u3064\u307e\u305a\u304d\u5bfe\u7b56'] || ''), setAt: fmtDate_(r['\u76ee\u6a19\u8a2d\u5b9a\u65e5']),
+      targets: goals
+    },
+    fields: String(r['\u6bce\u65e5\u306e\u8a18\u9332\u9805\u76ee'] || '')
+  };
+}
+
+function recordOut_(r) {
+  return {
+    date: fmtDate_(r['\u65e5\u4ed8']), day: num_(r['DAY']),
+    s1: String(r['\u30b9\u30c8\u30ec\u30c3\u30c1\u2460'] || ''), s2: String(r['\u30b9\u30c8\u30ec\u30c3\u30c1\u2461'] || ''), train: String(r['\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0'] || ''),
+    watched: String(r['\u898b\u305f\u52d5\u753b'] || ''), mirror: String(r['\u93e1\u30c1\u30a7\u30c3\u30af'] || ''),
+    v: [num_(r['\u8a18\u93321']), num_(r['\u8a18\u93322']), num_(r['\u8a18\u93323'])],
+    g: [num_(r['\u76ee\u6a191 \u3044\u307e']), num_(r['\u76ee\u6a192 \u3044\u307e']), num_(r['\u76ee\u6a193 \u3044\u307e'])],
+    note: String(r['\u3072\u3068\u3053\u3068'] || '')
+  };
+}
+
+function photoOut_(r) {
+  return {
+    date: fmtDate_(r['\u64ae\u5f71\u65e5']), day: num_(r['DAY']), label: String(r['\u30bf\u30a4\u30df\u30f3\u30b0'] || ''),
+    front: fileId_(r['\u6b63\u9762\u306e\u5199\u771f']), side: fileId_(r['\u6a2a\u5411\u304d\u306e\u5199\u771f']), comment: String(r['\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8'] || '')
+  };
+}
+
+// \u52d5\u753b\u30fb\u8b1b\u7fa9\u30fb\u30ed\u30fc\u30c9\u30de\u30c3\u30d7\u30fb\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1\uff0810\u5206\u30ad\u30e3\u30c3\u30b7\u30e5\uff09
+function content_() {
+  const cache = CacheService.getScriptCache();
+  const parts = cache.getAll(['c0', 'c1', 'c2', 'c3', 'cn']);
+  if (parts.cn) {
+    let s = ''; for (let i = 0; i < Number(parts.cn); i++) s += parts['c' + i] || '';
+    if (s) return JSON.parse(s);
+  }
+  const video = table_(SH.video).rows;
+  const stretch = {}, train = {};
+  video.forEach(r => {
+    const code = String(r['\u756a\u53f7'] || '').trim(); if (!code) return;
+    const link = String(r['Vimeo\u30ea\u30f3\u30af'] || '').trim();
+    if (r['\u7a2e\u5225'] === '\u30b9\u30c8\u30ec\u30c3\u30c1') stretch[code] = [String(r['\u30bf\u30a4\u30c8\u30eb'] || ''), link];
+    if (r['\u7a2e\u5225'] === '\u904b\u52d5') {
+      const memo = String(r['\u30e1\u30e2'] || '');
+      const alt = (memo.match(/\u904b\u52d5([A-G]-[0-9]+(?:-[0-9]+)?(?:\u8ca0\u8377)?)/g) || []).map(x => x.replace('\u904b\u52d5', '')).find(x => x !== code) || '';
+      train[code] = [String(r['\u30bf\u30a4\u30c8\u30eb'] || ''), link, String(r['\u5f37\u5ea6\uff0f\u96e3\u6613\u5ea6'] || ''), alt];
+    }
+  });
+  const lectures = table_(SH.lecture).rows.filter(r => r['\u8b1b\u7fa9\u756a\u53f7']).map(r => ({
+    code: String(r['\u8b1b\u7fa9\u756a\u53f7']), title: String(r['\u30bf\u30a4\u30c8\u30eb'] || ''), week: r['\u914d\u4fe1\u9031'] === '' ? null : num_(r['\u914d\u4fe1\u9031']),
+    link: String(r['Vimeo\u30ea\u30f3\u30af'] || ''), kind: String(r['\u533a\u5206'] || ''), min: num_(r['\u5c3a\uff08\u5206\uff09']), status: String(r['\u72b6\u614b'] || '')
+  }));
+  const roadmap = table_(SH.roadmap).rows.filter(r => r['\u9031'] !== '' && !isNaN(Number(r['\u9031']))).map(r => ({
+    week: Number(r['\u9031']), phase: String(r['\u30d5\u30a7\u30fc\u30ba'] || ''), theme: String(r['\u4eca\u9031\u306e\u30c6\u30fc\u30de'] || ''),
+    freq: String(r['\u30c8\u30ec\u56de\u6570'] || ''),
+    train: [r['\u30c8\u30ec1'], r['\u30c8\u30ec2'], r['\u30c8\u30ec3']].map(x => String(x || '').replace('\u904b\u52d5', '')).filter(Boolean),
+    milestone: String(r['\u7bc0\u76ee\u30fb\u30b5\u30dd\u30fc\u30c8'] || '')
+  }));
+  const daily = table_(SH.daily).rows.filter(r => r['DAY']).map(r => [
+    String(r['\u7ae0'] || ''), String(r['\u4eca\u65e5\u306e\u30b3\u30f3\u30bb\u30d7\u30c8'] || ''), String(r['\u7bc0\u76ee\u30d0\u30c3\u30b8'] || ''),
+    String(r['\u30e1\u30a4\u30f3\u30b3\u30fc\u30c9'] || ''), String(r['\u30b5\u30d6\u30b3\u30fc\u30c9'] || '')
+  ]);
+  const out = { stretch: stretch, train: train, lectures: lectures, roadmap: roadmap, daily: daily };
+  const s = JSON.stringify(out), size = 90000, n = Math.ceil(s.length / size), put = { cn: String(n) };
+  for (let i = 0; i < n; i++) put['c' + i] = s.slice(i * size, (i + 1) * size);
+  if (n <= 4) cache.putAll(put, 600);
+  return out;
+}
+
+// ============ \u4fdd\u5b58 ============
+function saveDay_(me, req) {
+  const d = req.data || {};
+  const date = String(d.date || fmtDate_(new Date()));
+  const m = findMember_(me.id);
+  const row = {
+    '\u65e5\u4ed8': date, '\u4f1a\u54e1ID': me.id, '\u540d\u524d': m ? m['\u540d\u524d'] : '', 'DAY': d.day || '', '\u9031': d.week || '',
+    '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460': d.s1 || '', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461': d.s2 || '', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0': (d.train || []).join('\u30fb'),
+    '\u898b\u305f\u52d5\u753b': (d.watched || []).join('\u30fb'), '\u93e1\u30c1\u30a7\u30c3\u30af': d.mirror || '',
+    '\u8a18\u93321': val_(d.v, 0), '\u8a18\u93322': val_(d.v, 1), '\u8a18\u93323': val_(d.v, 2),
+    '\u76ee\u6a191 \u3044\u307e': val_(d.g, 0), '\u76ee\u6a192 \u3044\u307e': val_(d.g, 1), '\u76ee\u6a193 \u3044\u307e': val_(d.g, 2),
+    '\u3072\u3068\u3053\u3068': String(d.note || '').slice(0, 500), '\u4fdd\u5b58\u65e5\u6642': now_()
+  };
+  upsert_(SH.record, r => String(r['\u4f1a\u54e1ID']) === me.id && fmtDate_(r['\u65e5\u4ed8']) === date, row);
+  return { ok: true };
+}
+
+function saveGoal_(me, req) {
+  const g = req.goal || {};
+  const t = g.targets || [];
+  const upd = {
+    '6\u30f6\u6708\u5f8c\u306e\u7406\u60f3\u306e\u5834\u9762\uff08MY GOAL\uff09': g.scene || '', '\u304a\u60a9\u307f': g.needs || '', '\u4e00\u756a\u89e3\u6c7a\u3057\u305f\u3044\u3053\u3068': g.top || '',
+    '\u5909\u308f\u308a\u305f\u3044\u7406\u7531': g.why || '', '\u3053\u306e\u307e\u307e\u3060\u30681\u5e74\u5f8c': g.ifnot || '', '\u3084\u308b\u6642\u9593\u30fb\u5834\u6240': g.when || '', '\u3064\u307e\u305a\u304d\u5bfe\u7b56': g.plan || '',
+    '\u76ee\u6a19\u8a2d\u5b9a\u65e5': fmtDate_(new Date())
+  };
+  for (let i = 0; i < 3; i++) {
+    upd['\u5352\u696d\u76ee\u6a19' + (i + 1)] = t[i] ? t[i].label : '';
+    upd['\u76ee\u6a19' + (i + 1) + ' \u30b9\u30bf\u30fc\u30c8'] = t[i] ? t[i].start : '';
+    upd['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024'] = t[i] ? t[i].target : '';
+  }
+  const ok = updateMember_(me.id, upd);
+  if (!ok) throw new Error('member_not_found');
+  return { ok: true };
+}
+
+function uploadPhoto_(me, req) {
+  const p = req.photo || {};
+  const m = findMember_(me.id); if (!m) throw new Error('member_not_found');
+  const match = String(p.dataUrl || '').match(/^data:(image\/[a-z]+);base64,(.+)$/);
+  if (!match) throw new Error('bad_image');
+  const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), match[1], p.date + '_' + p.side + '.jpg');
+  const folder = memberFolder_(me.id, m['\u540d\u524d']);
+  const file = folder.createFile(blob);
+  const date = String(p.date || fmtDate_(new Date()));
+  const col = p.side === 'front' ? '\u6b63\u9762\u306e\u5199\u771f' : '\u6a2a\u5411\u304d\u306e\u5199\u771f';
+  const sheet = ss_().getSheetByName(SH.photo);
+  const t = table_(SH.photo);
+  const found = t.rows.find(r => String(r['\u4f1a\u54e1ID']) === me.id && fmtDate_(r['\u64ae\u5f71\u65e5']) === date);
+  if (found) {
+    sheet.getRange(found._row, t.col[col] + 1).setValue(file.getUrl());
+  } else {
+    const row = { '\u64ae\u5f71\u65e5': date, '\u4f1a\u54e1ID': me.id, '\u540d\u524d': m['\u540d\u524d'], 'DAY': p.day || '', '\u30bf\u30a4\u30df\u30f3\u30b0': p.label || '' };
+    row[col] = file.getUrl();
+    appendRow_(SH.photo, row);
+  }
+  return { ok: true, fileId: file.getId() };
+}
+
+function getPhoto_(me, req) {
+  const id = String(req.fileId || '');
+  const own = table_(SH.photo).rows.some(r => String(r['\u4f1a\u54e1ID']) === me.id && (fileId_(r['\u6b63\u9762\u306e\u5199\u771f']) === id || fileId_(r['\u6a2a\u5411\u304d\u306e\u5199\u771f']) === id));
+  if (!own) throw new Error('not_allowed');
+  return { ok: true, dataUrl: thumb_(id) };
+}
+
+function thumb_(id) {
+  const f = DriveApp.getFileById(id);
+  const b = f.getThumbnail() || f.getBlob();
+  return 'data:' + (b.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(b.getBytes());
+}
+
+// ============ \u98df\u4e8b\u30b5\u30dd\u30fc\u30c8 ============
+function meal_(me, req) {
+  const key = prop_('ANTHROPIC_API_KEY');
+  const m = findMember_(me.id);
+  const text = String(req.text || '').slice(0, 800);
+  const img = String(req.image || '');
+  let reply;
+  if (!key) {
+    reply = '\uff08\u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u306e\u6e96\u5099\u4e2d\u3067\u3059\u3002\u3082\u3046\u3057\u3070\u3089\u304f\u304a\u5f85\u3061\u304f\u3060\u3055\u3044\uff09';
+  } else {
+    const content = [];
+    const im = img.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+    if (im) content.push({ type: 'image', source: { type: 'base64', media_type: im[1], data: im[2] } });
+    content.push({ type: 'text', text: text || '\u3053\u306e\u98df\u4e8b\u306b\u3064\u3044\u3066\u30a2\u30c9\u30d0\u30a4\u30b9\u3092\u304f\u3060\u3055\u3044\u3002' });
+    const goal = m ? String(m['6\u30f6\u6708\u5f8c\u306e\u7406\u60f3\u306e\u5834\u9762\uff08MY GOAL\uff09'] || '') : '';
+    const system = [
+      '\u3042\u306a\u305f\u306f\u7406\u5b66\u7642\u6cd5\u58eb\u30fb\u52a0\u85e4\u304c\u76e3\u4fee\u3059\u308b\u300cTeras Lab. RESHAPE\u300d\u306e\u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u3067\u3059\u3002\u76f8\u624b\u306f40\u301c60\u4ee3\u306e\u5973\u6027\u3067\u3001\u59ff\u52e2\u6539\u5584\u3068\u4f53\u578b\u306e\u5909\u5316\u306b\u53d6\u308a\u7d44\u3093\u3067\u3044\u307e\u3059\u3002',
+      '\u9001\u3089\u308c\u305f\u98df\u4e8b\uff08\u5199\u771f\u3084\u6587\u7ae0\uff09\u306b\u3064\u3044\u3066\u3001\u4e3b\u98df\u30fb\u4e3b\u83dc\u30fb\u526f\u83dc\u306e\u30d0\u30e9\u30f3\u30b9\u3092\u77ed\u304f\u8a55\u4fa1\u3057\u3001\u6b21\u306e\u4e00\u98df\u3067\u5b9f\u884c\u3067\u304d\u308b\u5177\u4f53\u7684\u306a\u30d2\u30f3\u30c8\u30921\u3064\u3060\u3051\u4f1d\u3048\u3066\u304f\u3060\u3055\u3044\u3002',
+      '\u3084\u3055\u3057\u304f\u524d\u5411\u304d\u306a\u53e3\u8abf\u3067\u3001250\u6587\u5b57\u4ee5\u5185\u3002\u30ab\u30ed\u30ea\u30fc\u8a08\u7b97\u3092\u7d30\u304b\u304f\u6c42\u3081\u305f\u308a\u3001\u6975\u7aef\u306a\u5236\u9650\u3092\u3059\u3059\u3081\u305f\u308a\u3057\u306a\u3044\u3067\u304f\u3060\u3055\u3044\u3002',
+      '\u6301\u75c5\u30fb\u670d\u85ac\u30fb\u598a\u5a20\u30fb\u5f37\u3044\u75db\u307f\u306a\u3069\u533b\u7642\u7684\u306a\u76f8\u8ac7\u306b\u306f\u7b54\u3048\u305a\u3001\u4e3b\u6cbb\u533b\u3084\u62c5\u5f53\u306e\u52a0\u85e4\u306b\u76f8\u8ac7\u3059\u308b\u3088\u3046\u4f1d\u3048\u3066\u304f\u3060\u3055\u3044\u3002',
+      goal ? ('\u3053\u306e\u4eba\u306e\u76ee\u6a19\uff1a' + goal) : ''
+    ].join('\n');
+    const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      payload: JSON.stringify({ model: MEAL_MODEL, max_tokens: 600, system: system, messages: [{ role: 'user', content: content }] })
+    });
+    if (res.getResponseCode() === 200) {
+      const j = JSON.parse(res.getContentText());
+      reply = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+    } else {
+      reply = '\u3059\u307f\u307e\u305b\u3093\u3001\u3044\u307e\u8fd4\u4fe1\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u5c11\u3057\u6642\u9593\u3092\u304a\u3044\u3066\u3082\u3046\u4e00\u5ea6\u9001\u3063\u3066\u304f\u3060\u3055\u3044\u3002';
+    }
+  }
+  let photoUrl = '';
+  if (img && m) {
+    try {
+      const im2 = img.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+      if (im2) photoUrl = memberFolder_(me.id, m['\u540d\u524d']).createFile(Utilities.newBlob(Utilities.base64Decode(im2[2]), im2[1], 'meal_' + Date.now() + '.jpg')).getUrl();
+    } catch (err) { /* \u5199\u771f\u306e\u4fdd\u5b58\u306b\u5931\u6557\u3057\u3066\u3082\u8fd4\u4fe1\u306f\u8fd4\u3059 */ }
+  }
+  appendRow_(SH.meal, { '\u65e5\u6642': now_(), '\u4f1a\u54e1ID': me.id, '\u540d\u524d': m ? m['\u540d\u524d'] : '', '\u9001\u3063\u305f\u5185\u5bb9': text, '\u5199\u771f': photoUrl, '\u81ea\u52d5\u8fd4\u4fe1': reply });
+  return { ok: true, reply: reply };
+}
+
+// ============ \u7ba1\u7406\u8005 ============
+function checkAdmin_(req) {
+  const k = prop_('ADMIN_KEY');
+  if (!k || String(req.adminKey || '') !== k) throw new Error('admin_denied');
+}
+
+function adminData_(req) {
+  checkAdmin_(req);
+  const recs = table_(SH.record).rows, photos = table_(SH.photo).rows;
+  const today = fmtDate_(new Date());
+  const members = table_(SH.member).rows.filter(r => r['\u4f1a\u54e1ID']).map(r => {
+    const m = memberOut_(r);
+    const mine = recs.filter(x => String(x['\u4f1a\u54e1ID']) === m.id).map(recordOut_);
+    const ph = photos.filter(x => String(x['\u4f1a\u54e1ID']) === m.id).map(photoOut_);
+    return { member: m, records: mine.slice(-60), photos: ph };
+  });
+  return { ok: true, today: today, members: members, sheetUrl: ss_().getUrl() };
+}
+
+function adminPhoto_(req) {
+  checkAdmin_(req);
+  return { ok: true, dataUrl: thumb_(String(req.fileId || '')) };
+}
+
+// ============ \u521d\u671f\u8a2d\u5b9a\uff08\u6700\u521d\u306b1\u56de\u3060\u3051\u5b9f\u884c\uff09 ============
+function setup() {
+  const ss = ss_();
+  // 1. \u6bce\u65e5\u306e\u8a18\u9332\uff1a\u76ee\u6a19\u306e\u300c\u3044\u307e\u300d\u306e\u5217\u3092\u8ffd\u52a0
+  ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
+  ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
+  ensureHeaders_(SH.meal, ['\u65e5\u6642', '\u4f1a\u54e1ID', '\u540d\u524d', '\u9001\u3063\u305f\u5185\u5bb9', '\u5199\u771f', '\u81ea\u52d5\u8fd4\u4fe1', '\u62c5\u5f53\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff08VIP\uff09']);
+  // 2. \u4f1a\u54e1\u30b7\u30fc\u30c8\uff1a\u30d7\u30eb\u30c0\u30a6\u30f3\u3068\u898b\u51fa\u3057\u306e\u56fa\u5b9a
+  const ms = ss.getSheetByName(SH.member);
+  const t = table_(SH.member);
+  const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
+  ms.getRange(2, t.col['\u30d7\u30e9\u30f3'] + 1, 500, 1).setDataValidation(dv(['STANDARD', 'VIP']));
+  ms.getRange(2, t.col['\u5229\u7528'] + 1, 500, 1).setDataValidation(dv(['\u627f\u8a8d\u5f85\u3061', '\u5229\u7528\u4e2d', '\u5352\u696d\u751f', '\u505c\u6b62']));
+  ms.getRange(2, t.col['\u5ef6\u9577\u5e0c\u671b'] + 1, 500, 1).setDataValidation(dv(['\u5ef6\u9577\u3059\u308b', '\u5ef6\u9577\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']));
+  ms.getRange(2, t.col['\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b'] + 1, 500, 1).setDataValidation(dv(['\u53c2\u52a0\u3059\u308b', '\u53c2\u52a0\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']));
+  [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
+  ms.setFrozenColumns(2);
+  // 3. \u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1\uff08180\u65e5\u30d7\u30ed\u30b0\u30e9\u30e0\u306e\u5272\u308a\u5f53\u3066\u3092\u30b3\u30d4\u30fc\uff09
+  if (!ss.getSheetByName(SH.daily)) {
+    const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);
+    const vals = src.getDataRange().getValues();
+    const dst = ss.insertSheet(SH.daily);
+    dst.getRange(1, 1, vals.length, vals[0].length).setValues(vals);
+    dst.setFrozenRows(1);
+  }
+  // 4. \u5199\u771f\u306e\u4fdd\u5b58\u30d5\u30a9\u30eb\u30c0
+  if (!prop_('PHOTO_FOLDER_ID')) {
+    const parent = DriveApp.getFileById(ss.getId()).getParents();
+    const base = parent.hasNext() ? parent.next() : DriveApp.getRootFolder();
+    const f = base.createFolder('RESHAPE_\u4f1a\u54e1\u306e\u5199\u771f');
+    PropertiesService.getScriptProperties().setProperty('PHOTO_FOLDER_ID', f.getId());
+  }
+  // 5. \u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0
+  ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); });
+  CacheService.getScriptCache().removeAll(['c0', 'c1', 'c2', 'c3', 'cn']);
+  Logger.log('setup \u5b8c\u4e86');
+}
+
+/** \u52d5\u753b\u3084\u30ed\u30fc\u30c9\u30de\u30c3\u30d7\u3092\u76f4\u3057\u305f\u3042\u3068\u3001\u3059\u3050\u30b5\u30a4\u30c8\u306b\u53cd\u6620\u3057\u305f\u3044\u3068\u304d\u306b\u5b9f\u884c */
+function clearCache() { CacheService.getScriptCache().removeAll(['c0', 'c1', 'c2', 'c3', 'cn']); }
+
+// ============ \u5171\u901a\u306e\u9053\u5177 ============
+function ss_() { return SpreadsheetApp.openById(SHEET_ID); }
+function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k); }
+function now_() { return Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd HH:mm'); }
+function num_(v) { if (v === '' || v === null || v === undefined) return null; const n = Number(v); return isNaN(n) ? null : n; }
+function val_(a, i) { return a && a[i] !== null && a[i] !== undefined && a[i] !== '' ? Number(a[i]) : ''; }
+function fmtDate_(v) {
+  if (!v) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy/MM/dd');
+  const s = String(v).trim().replace(/-/g, '/');
+  const m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  return m ? m[1] + '/' + ('0' + m[2]).slice(-2) + '/' + ('0' + m[3]).slice(-2) : s;
+}
+function fmtDateTime_(v) {
+  if (!v) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy/MM/dd HH:mm');
+  return String(v).trim().replace(/-/g, '/');
+}
+function fileId_(v) { const m = String(v || '').match(/[-\w]{25,}/); return m ? m[0] : ''; }
+
+function table_(name) {
+  const sh = ss_().getSheetByName(name);
+  if (!sh) return { rows: [], col: {} };
+  const vals = sh.getDataRange().getValues();
+  const head = (vals[0] || []).map(h => String(h).trim());
+  const col = {}; head.forEach((h, i) => { if (h && col[h] === undefined) col[h] = i; });
+  const rows = vals.slice(1).map((r, i) => { const o = { _row: i + 2 }; head.forEach((h, j) => { if (h) o[h] = r[j]; }); return o; });
+  return { rows: rows, col: col, head: head, sheet: sh };
+}
+
+function appendRow_(name, obj) {
+  const t = table_(name);
+  const row = t.head.map(h => obj[h] !== undefined ? obj[h] : '');
+  t.sheet.appendRow(row);
+}
+
+function upsert_(name, pred, obj) {
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const t = table_(name);
+    const found = t.rows.find(pred);
+    if (found) {
+      const cur = t.head.map(h => obj[h] !== undefined ? obj[h] : found[h]);
+      t.sheet.getRange(found._row, 1, 1, cur.length).setValues([cur]);
+    } else {
+      t.sheet.appendRow(t.head.map(h => obj[h] !== undefined ? obj[h] : ''));
+    }
+  } finally { lock.releaseLock(); }
+}
+
+function findMember_(id) { return table_(SH.member).rows.find(r => String(r['\u4f1a\u54e1ID']) === id); }
+
+function updateMember_(id, upd) {
+  const t = table_(SH.member);
+  const r = t.rows.find(x => String(x['\u4f1a\u54e1ID']) === id);
+  if (!r) return false;
+  Object.keys(upd).forEach(h => { if (t.col[h] !== undefined) t.sheet.getRange(r._row, t.col[h] + 1).setValue(upd[h]); });
+  return true;
+}
+
+function ensureHeaders_(name, heads) {
+  const sh = ss_().getSheetByName(name) || ss_().insertSheet(name);
+  const cur = sh.getLastColumn() ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String) : [];
+  heads.forEach(h => { if (cur.indexOf(h) < 0) { cur.push(h); sh.getRange(1, cur.length).setValue(h); } });
+}
+
+function memberFolder_(id, name) {
+  const base = DriveApp.getFolderById(prop_('PHOTO_FOLDER_ID'));
+  const label = (name ? name + '_' : '') + id.slice(-6);
+  const it = base.getFoldersByName(label);
+  return it.hasNext() ? it.next() : base.createFolder(label);
+}
