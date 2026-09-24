@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>RESHAPE 管理</title>
+<link rel="icon" href="logo-mark.webp">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Outfit:wght@400;600;700&family=Cormorant+Garamond:wght@500&family=Cinzel:wght@500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>
+.wrap{max-width:760px;padding-block:12px 40px}
+.login{padding:22px 18px;display:grid;gap:10px}
+.login input{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:12px;padding:12px;font:inherit}
+.mem{cursor:pointer}
+.mem:hover{background:var(--surface2)}
+.det{padding:14px;border-top:1px solid var(--line);display:grid;gap:12px;background:var(--surface2)}
+.det table{width:100%;border-collapse:collapse;font-size:12px}
+.det th,.det td{border-bottom:1px solid var(--line);padding:5px 4px;text-align:left;white-space:nowrap}
+.det .scroll{overflow-x:auto}
+.phs{display:flex;gap:8px;flex-wrap:wrap}
+.phs button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:6px 10px;font-size:12px}
+.phs img{width:140px;border-radius:10px;display:block}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.filters button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:700}
+.filters button[aria-pressed="true"]{background:var(--ink);color:var(--ground)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><img src="logo-mark.webp" alt=""><div class="w"><small>Teras Lab.</small><b>RESHAPE</b></div><span class="tag">管理者</span></div>
+  <main id="view"></main>
+</div>
+<script src="config.js"></script>
+<script>
+(() => {
+const CFG = window.RESHAPE_CONFIG || {};
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const parseD = s => { const m = String(s || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+const dd = (a, b) => Math.round((new Date(a.getFullYear(), a.getMonth(), a.getDate()) - new Date(b.getFullYear(), b.getMonth(), b.getDate())) / 864e5);
+const md = d => d ? (d.getMonth() + 1) + '/' + d.getDate() : '—';
+let KEY = '', DATA = null, OPEN = null, FILTER = 'all', PH = {};
+try { KEY = sessionStorage.getItem('reshape_admin') || ''; } catch (e) {}
+
+async function api(action, extra) {
+  const r = await fetch(CFG.GAS_URL, { method: 'POST', body: JSON.stringify(Object.assign({ action, adminKey: KEY }, extra || {})) });
+  const j = await r.json(); if (!j.ok) throw new Error(j.error); return j;
+}
+function login(msg) {
+  $('#view').innerHTML = `<section class="card login"><h2>管理者ページ</h2><label for="k">合言葉</label><input id="k" type="password" autocomplete="current-password"><button class="btn" id="go" type="button">開く</button>${msg ? `<p style="color:var(--bad);font-size:13px">${esc(msg)}</p>` : ''}</section>`;
+  $('#go').onclick = () => { KEY = $('#k').value.trim(); try { sessionStorage.setItem('reshape_admin', KEY); } catch (e) {} load(); };
+}
+async function load() {
+  if (!CFG.GAS_URL) return login('config.js の GAS_URL が未設定です');
+  if (!KEY) return login();
+  $('#view').innerHTML = '<div class="loading"><div class="spin"></div><p>読み込んでいます…</p></div>';
+  try { DATA = await api('admin'); render(); } catch (e) { KEY = ''; login(e.message === 'admin_denied' ? '合言葉が違います' : '読み込めませんでした：' + e.message); }
+}
+function stat(x) {
+  const m = x.member, today = parseD(DATA.today), st = parseD(m.start);
+  const day = st ? dd(today, st) + 1 : 0, week = day > 0 ? Math.ceil(day / 7) : 0;
+  const recs = x.records, last = recs.length ? parseD(recs[recs.length - 1].date) : null;
+  const gap = last ? dd(today, last) : 99;
+  const wk = st ? recs.filter(r => { const d = parseD(r.date); return d && Math.ceil((dd(d, st) + 1) / 7) === week; }).length : 0;
+  const end = parseD(m.plan === 'VIP' ? m.end6 : m.end3);
+  const pat = []; for (let i = 27; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); const k = d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0'); const r = recs.find(y => y.date === k); pat.push(r ? (r.s1 && r.s2 ? 'r' : 'p') : ''); }
+  let st2 = 'good';
+  if (m.status === '承認待ち') st2 = 'warn'; else if (m.status !== '利用中') st2 = ''; else if (gap >= 3) st2 = 'bad'; else if (wk < Math.min(3, ((day - 1) % 7) + 1) - 1) st2 = 'warn';
+  return { m, day, week, last, gap, wk, end, pat, st: st2 };
+}
+function render() {
+  const rows = DATA.members.map(x => Object.assign(x, { s: stat(x) }));
+  const act = rows.filter(r => r.member.status === '利用中');
+  const counts = { all: rows.length, bad: rows.filter(r => r.s.st === 'bad').length, warn: rows.filter(r => r.s.st === 'warn').length, pending: rows.filter(r => r.member.status === '承認待ち').length };
+  const list = rows.filter(r => FILTER === 'all' || (FILTER === 'pending' ? r.member.status === '承認待ち' : r.s.st === FILTER));
+  const lbl = { good: '順調', warn: '声かけ候補', bad: '要フォロー', '': '—' };
+  $('#view').innerHTML = `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>会員の取り組み状況</h2><span class="aside">${esc(DATA.today)} 時点・<a href="${esc(DATA.sheetUrl)}" target="_blank" rel="noopener">シートを開く</a></span></div>
+  <div class="kpis"><div class="kpi"><div class="v">${act.length}</div><div class="k">利用中</div></div><div class="kpi"><div class="v" style="color:var(--good)">${act.filter(r => r.s.wk >= 3).length}</div><div class="k">今週3日達成</div></div><div class="kpi"><div class="v" style="color:var(--warn)">${counts.warn}</div><div class="k">声かけ候補</div></div><div class="kpi"><div class="v" style="color:var(--bad)">${counts.bad}</div><div class="k">3日以上 未記録</div></div></div>
+  <div class="filters">${[['all', 'すべて'], ['bad', '要フォロー'], ['warn', '声かけ候補'], ['pending', '承認待ち']].map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${FILTER === k}">${l}（${counts[k]}）</button>`).join('')}</div></section>
+  <section class="sec"><div class="card">${list.map(x => card(x, lbl)).join('') || '<p style="padding:14px">該当する会員はいません。</p>'}</div></section>`;
+}
+function card(x, lbl) {
+  const m = x.member, s = x.s;
+  return `<div class="mem" data-id="${esc(m.id)}"><div class="nm">${esc(m.name || '（名前未登録）')}<small>${esc(m.plan || '未設定')}</small><small>${esc(m.status)}</small></div><span class="pill ${s.st}">${lbl[s.st] || '—'}</span>
+  <div class="meta"><span>DAY <b>${s.day > 0 ? s.day : '開始前'}</b></span><span>今週 <b>${s.wk}/3</b>日</span><span>最終記録 <b>${s.last ? (s.gap === 0 ? '今日' : s.gap + '日前') : 'なし'}</b></span><span>サポート終了 <b>${md(s.end)}</b></span>${m.plan === 'VIP' ? `<span>次のZoom <b>${esc(m.zoomAt || '未定')}</b></span>` : ''}</div>
+  <div class="spark" aria-label="直近4週の記録">${s.pat.map(c => `<i class="${c}"></i>`).join('')}</div>
+  ${OPEN === m.id ? detail(x) : ''}</div>`;
+}
+function detail(x) {
+  const m = x.member, recs = x.records.slice(-14).reverse();
+  const f = String(m.fields || '体重(kg)／痛み(0-10)／睡眠(時間)').split(/[／\/]/).slice(0, 3);
+  return `<div class="det" onclick="event.stopPropagation()">
+  <div><b>MY GOAL：</b>${esc(m.goal.scene || '未設定')}<br>${m.goal.targets.map(t => `${esc(t.label)}：${t.start ?? '—'} → ${t.target ?? '—'}`).join('／')}</div>
+  <div class="scroll"><table><thead><tr><th>日付</th><th>DAY</th><th>ストレッチ</th><th>トレ</th><th>動画</th><th>鏡</th>${f.map(x => `<th>${esc(x)}</th>`).join('')}<th>ひとこと</th></tr></thead><tbody>${recs.map(r => `<tr><td>${esc(r.date)}</td><td>${r.day ?? ''}</td><td>${esc([r.s1, r.s2].filter(Boolean).join('・'))}</td><td>${esc(r.train)}</td><td>${esc(r.watched)}</td><td>${esc(r.mirror)}</td>${[0, 1, 2].slice(0, f.length).map(i => `<td>${r.v[i] ?? ''}</td>`).join('')}<td style="white-space:normal">${esc(r.note)}</td></tr>`).join('')}</tbody></table></div>
+  <div><b>姿勢写真</b><div class="phs">${x.photos.map(p => ['front', 'side'].filter(k => p[k]).map(k => PH[p[k]] ? `<figure style="margin:0"><img src="${PH[p[k]]}" alt=""><figcaption style="font-size:11px">DAY${p.day} ${k === 'front' ? '正面' : '横'}</figcaption></figure>` : `<button type="button" data-ph="${esc(p[k])}">DAY${p.day} ${k === 'front' ? '正面' : '横'}を表示</button>`).join('')).join('') || 'まだありません'}</div></div></div>`;
+}
+document.addEventListener('click', async e => {
+  const f = e.target.closest('[data-f]'); if (f) { FILTER = f.dataset.f; render(); return; }
+  const ph = e.target.closest('[data-ph]'); if (ph) { ph.textContent = '読み込み中…'; try { PH[ph.dataset.ph] = (await api('adminPhoto', { fileId: ph.dataset.ph })).dataUrl; } catch (err) { ph.textContent = '表示できませんでした'; return; } render(); return; }
+  const m = e.target.closest('.mem'); if (m) { OPEN = OPEN === m.dataset.id ? null : m.dataset.id; render(); }
+});
+load();
+})();
+</script>
+</body>
+</html>
