@@ -167,7 +167,16 @@ function content_() {
     train: [r['トレ1'], r['トレ2'], r['トレ3']].map(x => String(x || '').replace('運動', '')).filter(Boolean),
     milestone: String(r['節目・サポート'] || '')
   }));
-  const daily = table_(SH.daily).rows.filter(r => r['DAY']).map(r => [
+  let dailyRows = table_(SH.daily).rows;
+  if (!dailyRows.length) { // タブが無いときは180日プログラムから直接読む
+    try {
+      const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);
+      const v = src ? src.getDataRange().getValues() : [];
+      const h = (v[0] || []).map(x => String(x).trim());
+      dailyRows = v.slice(1).map(r => { const o = {}; h.forEach((k, j) => { if (k) o[k] = r[j]; }); return o; });
+    } catch (e) { dailyRows = []; }
+  }
+  const daily = dailyRows.filter(r => /^DAY\s*\d+$/.test(String(r['DAY'] || '').trim()) || /^\d+$/.test(String(r['DAY'] || '').trim())).map(r => [
     String(r['章'] || ''), String(r['今日のコンセプト'] || ''), String(r['節目バッジ'] || ''),
     String(r['メインコード'] || ''), String(r['サブコード'] || '')
   ]);
@@ -191,6 +200,7 @@ function saveDay_(me, req) {
     '目標1 いま': val_(d.g, 0), '目標2 いま': val_(d.g, 1), '目標3 いま': val_(d.g, 2),
     'ひとこと': String(d.note || '').slice(0, 500), '保存日時': now_()
   };
+  ensureHeaders_(SH.record, ['目標1 いま', '目標2 いま', '目標3 いま']);
   upsert_(SH.record, r => String(r['会員ID']) === me.id && fmtDate_(r['日付']) === date, row);
   return { ok: true };
 }

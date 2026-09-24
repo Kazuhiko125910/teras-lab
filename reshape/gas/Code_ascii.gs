@@ -167,7 +167,16 @@ function content_() {
     train: [r['\u30c8\u30ec1'], r['\u30c8\u30ec2'], r['\u30c8\u30ec3']].map(x => String(x || '').replace('\u904b\u52d5', '')).filter(Boolean),
     milestone: String(r['\u7bc0\u76ee\u30fb\u30b5\u30dd\u30fc\u30c8'] || '')
   }));
-  const daily = table_(SH.daily).rows.filter(r => r['DAY']).map(r => [
+  let dailyRows = table_(SH.daily).rows;
+  if (!dailyRows.length) { // \u30bf\u30d6\u304c\u7121\u3044\u3068\u304d\u306f180\u65e5\u30d7\u30ed\u30b0\u30e9\u30e0\u304b\u3089\u76f4\u63a5\u8aad\u3080
+    try {
+      const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);
+      const v = src ? src.getDataRange().getValues() : [];
+      const h = (v[0] || []).map(x => String(x).trim());
+      dailyRows = v.slice(1).map(r => { const o = {}; h.forEach((k, j) => { if (k) o[k] = r[j]; }); return o; });
+    } catch (e) { dailyRows = []; }
+  }
+  const daily = dailyRows.filter(r => /^DAY\s*\d+$/.test(String(r['DAY'] || '').trim()) || /^\d+$/.test(String(r['DAY'] || '').trim())).map(r => [
     String(r['\u7ae0'] || ''), String(r['\u4eca\u65e5\u306e\u30b3\u30f3\u30bb\u30d7\u30c8'] || ''), String(r['\u7bc0\u76ee\u30d0\u30c3\u30b8'] || ''),
     String(r['\u30e1\u30a4\u30f3\u30b3\u30fc\u30c9'] || ''), String(r['\u30b5\u30d6\u30b3\u30fc\u30c9'] || '')
   ]);
@@ -191,6 +200,7 @@ function saveDay_(me, req) {
     '\u76ee\u6a191 \u3044\u307e': val_(d.g, 0), '\u76ee\u6a192 \u3044\u307e': val_(d.g, 1), '\u76ee\u6a193 \u3044\u307e': val_(d.g, 2),
     '\u3072\u3068\u3053\u3068': String(d.note || '').slice(0, 500), '\u4fdd\u5b58\u65e5\u6642': now_()
   };
+  ensureHeaders_(SH.record, ['\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
   upsert_(SH.record, r => String(r['\u4f1a\u54e1ID']) === me.id && fmtDate_(r['\u65e5\u4ed8']) === date, row);
   return { ok: true };
 }
