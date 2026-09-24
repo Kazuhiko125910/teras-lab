@@ -461,7 +461,7 @@ function vMeal() {
 async function sendMeal(text, img) {
   if (S.busy || (!text && !img)) return;
   S.chat.push({ r: 'me', t: text || 'この食事どうですか？', img }); S.busy = true; route();
-  try { const r = await api('meal', { text, image: img || '' }); S.chat.push({ r: 'bot', t: r.reply }); }
+  try { const r = await api('meal', { text, image: img || '' }); S.chat.push({ r: 'bot', t: String(r.reply || '').replace(/\*\*/g, '').replace(/^#+\s*/gm, '') }); }
   catch (e) { S.chat.push({ r: 'bot', t: 'すみません、送信できませんでした。通信の状態を確認して、もう一度送ってください。' }); }
   S.busy = false; route();
 }
