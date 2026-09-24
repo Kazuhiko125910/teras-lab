@@ -331,37 +331,33 @@ function adminPhoto_(req) {
 // ============ \u521d\u671f\u8a2d\u5b9a\uff08\u6700\u521d\u306b1\u56de\u3060\u3051\u5b9f\u884c\uff09 ============
 function setup() {
   const ss = ss_();
-  // 1. \u6bce\u65e5\u306e\u8a18\u9332\uff1a\u76ee\u6a19\u306e\u300c\u3044\u307e\u300d\u306e\u5217\u3092\u8ffd\u52a0
-  ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
-  ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
-  ensureHeaders_(SH.meal, ['\u65e5\u6642', '\u4f1a\u54e1ID', '\u540d\u524d', '\u9001\u3063\u305f\u5185\u5bb9', '\u5199\u771f', '\u81ea\u52d5\u8fd4\u4fe1', '\u62c5\u5f53\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff08VIP\uff09']);
-  // 2. \u4f1a\u54e1\u30b7\u30fc\u30c8\uff1a\u30d7\u30eb\u30c0\u30a6\u30f3\u3068\u898b\u51fa\u3057\u306e\u56fa\u5b9a
-  const ms = ss.getSheetByName(SH.member);
-  const t = table_(SH.member);
-  const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
-  ms.getRange(2, t.col['\u30d7\u30e9\u30f3'] + 1, 500, 1).setDataValidation(dv(['STANDARD', 'VIP']));
-  ms.getRange(2, t.col['\u5229\u7528'] + 1, 500, 1).setDataValidation(dv(['\u627f\u8a8d\u5f85\u3061', '\u5229\u7528\u4e2d', '\u5352\u696d\u751f', '\u505c\u6b62']));
-  ms.getRange(2, t.col['\u5ef6\u9577\u5e0c\u671b'] + 1, 500, 1).setDataValidation(dv(['\u5ef6\u9577\u3059\u308b', '\u5ef6\u9577\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']));
-  ms.getRange(2, t.col['\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b'] + 1, 500, 1).setDataValidation(dv(['\u53c2\u52a0\u3059\u308b', '\u53c2\u52a0\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']));
-  [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
-  ms.setFrozenColumns(2);
-  // 3. \u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1\uff08180\u65e5\u30d7\u30ed\u30b0\u30e9\u30e0\u306e\u5272\u308a\u5f53\u3066\u3092\u30b3\u30d4\u30fc\uff09
-  if (!ss.getSheetByName(SH.daily)) {
+  const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '\uff1a' + e.message); } };
+  step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
+  step('\u898b\u51fa\u3057\u306e\u8ffd\u52a0', () => {
+    ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
+    ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
+    ensureHeaders_(SH.meal, ['\u65e5\u6642', '\u4f1a\u54e1ID', '\u540d\u524d', '\u9001\u3063\u305f\u5185\u5bb9', '\u5199\u771f', '\u81ea\u52d5\u8fd4\u4fe1', '\u62c5\u5f53\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff08VIP\uff09']);
+  });
+  step('\u4f1a\u54e1\u30b7\u30fc\u30c8\u306e\u30d7\u30eb\u30c0\u30a6\u30f3', () => {
+    const ms = ss.getSheetByName(SH.member), t = table_(SH.member);
+    const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
+    const put = (h, list) => { if (t.col[h] !== undefined) ms.getRange(2, t.col[h] + 1, 500, 1).setDataValidation(dv(list)); };
+    put('\u30d7\u30e9\u30f3', ['STANDARD', 'VIP']);
+    put('\u5229\u7528', ['\u627f\u8a8d\u5f85\u3061', '\u5229\u7528\u4e2d', '\u5352\u696d\u751f', '\u505c\u6b62']);
+    put('\u5ef6\u9577\u5e0c\u671b', ['\u5ef6\u9577\u3059\u308b', '\u5ef6\u9577\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']);
+    put('\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b', ['\u53c2\u52a0\u3059\u308b', '\u53c2\u52a0\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']);
+    ms.setFrozenColumns(2);
+  });
+  step('\u898b\u51fa\u3057\u306e\u56fa\u5b9a\u3068\u8272', () => [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); if (!s) return; s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); }));
+  step('\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1 \u30bf\u30d6', () => {
+    if (ss.getSheetByName(SH.daily)) return;
     const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);
     const vals = src.getDataRange().getValues();
     const dst = ss.insertSheet(SH.daily);
     dst.getRange(1, 1, vals.length, vals[0].length).setValues(vals);
     dst.setFrozenRows(1);
-  }
-  // 4. \u5199\u771f\u306e\u4fdd\u5b58\u30d5\u30a9\u30eb\u30c0
-  if (!prop_('PHOTO_FOLDER_ID')) {
-    const parent = DriveApp.getFileById(ss.getId()).getParents();
-    const base = parent.hasNext() ? parent.next() : DriveApp.getRootFolder();
-    const f = base.createFolder('RESHAPE_\u4f1a\u54e1\u306e\u5199\u771f');
-    PropertiesService.getScriptProperties().setProperty('PHOTO_FOLDER_ID', f.getId());
-  }
-  // 5. \u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0
-  ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); });
+  });
+  step('\u5199\u771f\u30d5\u30a9\u30eb\u30c0', () => photoRoot_());
   CacheService.getScriptCache().removeAll(['c0', 'c1', 'c2', 'c3', 'cn']);
   Logger.log('setup \u5b8c\u4e86');
 }
@@ -435,8 +431,17 @@ function ensureHeaders_(name, heads) {
   heads.forEach(h => { if (cur.indexOf(h) < 0) { cur.push(h); sh.getRange(1, cur.length).setValue(h); } });
 }
 
+function photoRoot_() {
+  const id = prop_('PHOTO_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  const parent = DriveApp.getFileById(SHEET_ID).getParents();
+  const f = (parent.hasNext() ? parent.next() : DriveApp.getRootFolder()).createFolder('RESHAPE_\u4f1a\u54e1\u306e\u5199\u771f');
+  PropertiesService.getScriptProperties().setProperty('PHOTO_FOLDER_ID', f.getId());
+  return f;
+}
+
 function memberFolder_(id, name) {
-  const base = DriveApp.getFolderById(prop_('PHOTO_FOLDER_ID'));
+  const base = photoRoot_();
   const label = (name ? name + '_' : '') + id.slice(-6);
   const it = base.getFoldersByName(label);
   return it.hasNext() ? it.next() : base.createFolder(label);

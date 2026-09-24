@@ -331,37 +331,33 @@ function adminPhoto_(req) {
 // ============ 初期設定（最初に1回だけ実行） ============
 function setup() {
   const ss = ss_();
-  // 1. 毎日の記録：目標の「いま」の列を追加
-  ensureHeaders_(SH.record, ['日付', '会員ID', '名前', 'DAY', '週', 'ストレッチ①', 'ストレッチ②', 'トレーニング', '見た動画', '鏡チェック', '記録1', '記録2', '記録3', 'ひとこと', '保存日時', '目標1 いま', '目標2 いま', '目標3 いま']);
-  ensureHeaders_(SH.photo, ['撮影日', '会員ID', '名前', 'DAY', 'タイミング', '正面の写真', '横向きの写真', '担当コメント']);
-  ensureHeaders_(SH.meal, ['日時', '会員ID', '名前', '送った内容', '写真', '自動返信', '担当フィードバック（VIP）']);
-  // 2. 会員シート：プルダウンと見出しの固定
-  const ms = ss.getSheetByName(SH.member);
-  const t = table_(SH.member);
-  const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
-  ms.getRange(2, t.col['プラン'] + 1, 500, 1).setDataValidation(dv(['STANDARD', 'VIP']));
-  ms.getRange(2, t.col['利用'] + 1, 500, 1).setDataValidation(dv(['承認待ち', '利用中', '卒業生', '停止']));
-  ms.getRange(2, t.col['延長希望'] + 1, 500, 1).setDataValidation(dv(['延長する', '延長しない', '未確認']));
-  ms.getRange(2, t.col['卒業生コミュニティ参加希望'] + 1, 500, 1).setDataValidation(dv(['参加する', '参加しない', '未確認']));
-  [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
-  ms.setFrozenColumns(2);
-  // 3. 毎日のストレッチ（180日プログラムの割り当てをコピー）
-  if (!ss.getSheetByName(SH.daily)) {
+  const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '：' + e.message); } };
+  step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
+  step('見出しの追加', () => {
+    ensureHeaders_(SH.record, ['日付', '会員ID', '名前', 'DAY', '週', 'ストレッチ①', 'ストレッチ②', 'トレーニング', '見た動画', '鏡チェック', '記録1', '記録2', '記録3', 'ひとこと', '保存日時', '目標1 いま', '目標2 いま', '目標3 いま']);
+    ensureHeaders_(SH.photo, ['撮影日', '会員ID', '名前', 'DAY', 'タイミング', '正面の写真', '横向きの写真', '担当コメント']);
+    ensureHeaders_(SH.meal, ['日時', '会員ID', '名前', '送った内容', '写真', '自動返信', '担当フィードバック（VIP）']);
+  });
+  step('会員シートのプルダウン', () => {
+    const ms = ss.getSheetByName(SH.member), t = table_(SH.member);
+    const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
+    const put = (h, list) => { if (t.col[h] !== undefined) ms.getRange(2, t.col[h] + 1, 500, 1).setDataValidation(dv(list)); };
+    put('プラン', ['STANDARD', 'VIP']);
+    put('利用', ['承認待ち', '利用中', '卒業生', '停止']);
+    put('延長希望', ['延長する', '延長しない', '未確認']);
+    put('卒業生コミュニティ参加希望', ['参加する', '参加しない', '未確認']);
+    ms.setFrozenColumns(2);
+  });
+  step('見出しの固定と色', () => [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); if (!s) return; s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); }));
+  step('毎日のストレッチ タブ', () => {
+    if (ss.getSheetByName(SH.daily)) return;
     const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);
     const vals = src.getDataRange().getValues();
     const dst = ss.insertSheet(SH.daily);
     dst.getRange(1, 1, vals.length, vals[0].length).setValues(vals);
     dst.setFrozenRows(1);
-  }
-  // 4. 写真の保存フォルダ
-  if (!prop_('PHOTO_FOLDER_ID')) {
-    const parent = DriveApp.getFileById(ss.getId()).getParents();
-    const base = parent.hasNext() ? parent.next() : DriveApp.getRootFolder();
-    const f = base.createFolder('RESHAPE_会員の写真');
-    PropertiesService.getScriptProperties().setProperty('PHOTO_FOLDER_ID', f.getId());
-  }
-  // 5. プロパティの枠
-  ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); });
+  });
+  step('写真フォルダ', () => photoRoot_());
   CacheService.getScriptCache().removeAll(['c0', 'c1', 'c2', 'c3', 'cn']);
   Logger.log('setup 完了');
 }
@@ -435,8 +431,17 @@ function ensureHeaders_(name, heads) {
   heads.forEach(h => { if (cur.indexOf(h) < 0) { cur.push(h); sh.getRange(1, cur.length).setValue(h); } });
 }
 
+function photoRoot_() {
+  const id = prop_('PHOTO_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  const parent = DriveApp.getFileById(SHEET_ID).getParents();
+  const f = (parent.hasNext() ? parent.next() : DriveApp.getRootFolder()).createFolder('RESHAPE_会員の写真');
+  PropertiesService.getScriptProperties().setProperty('PHOTO_FOLDER_ID', f.getId());
+  return f;
+}
+
 function memberFolder_(id, name) {
-  const base = DriveApp.getFolderById(prop_('PHOTO_FOLDER_ID'));
+  const base = photoRoot_();
   const label = (name ? name + '_' : '') + id.slice(-6);
   const it = base.getFoldersByName(label);
   return it.hasNext() ? it.next() : base.createFolder(label);
