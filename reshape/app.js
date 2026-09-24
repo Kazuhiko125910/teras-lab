@@ -409,13 +409,117 @@ function vPhoto() {
   <div class="card" style="padding-top:14px"><div class="two" style="padding:0 14px 14px">
     <div class="upload" style="margin:0"><b>正面</b><input type="file" id="ph-front" accept="image/*"><label for="ph-front">選ぶ</label></div>
     <div class="upload" style="margin:0"><b>横向き</b><input type="file" id="ph-side" accept="image/*"><label for="ph-side">選ぶ</label></div></div>
-  <div class="tips"><div><b>1</b>壁から1歩離れ、足をそろえて立つ</div><div><b>2</b>スマホは胸の高さ・2m離して縦向き</div><div><b>3</b>毎回同じ場所・同じ服装で</div></div></div></section>
+  <div class="tips"><div><b>1</b>壁から1歩離れ、足をそろえて立つ（頭から足先まで入れる）</div><div><b>2</b>スマホは胸の高さ・2m離して縦向き</div><div><b>3</b>毎回同じ場所・同じ服装で</div><div><b>4</b>選んだあと、足首が中央の線にくるよう自動で位置を合わせます</div></div></div></section>
   <section class="sec"><div class="sec-h"><h2>撮影スケジュール</h2><span class="aside">${S.data.member.plan === 'VIP' ? 'Zoom面談の前ごと' : '4週ごと'}</span></div>
   <div class="card">${list.map((p, i) => { const ok = photoTaken(p, i, list); return `<div class="item"><span class="check" aria-hidden="true" ${ok ? 'data-on' : ''}>${ok ? tick : ''}</span><div><div class="t">${esc(p.l)}</div><div class="s num">DAY ${p.d}〜</div></div><span class="pill ${ok ? 'good' : due && due.d === p.d ? (p.d <= S.day ? 'bad' : 'warn') : ''}">${ok ? '撮影済み' : due && due.d === p.d ? (p.d <= S.day ? '今撮りましょう' : '次回') : p.d < S.day ? '—' : '予定'}</span></div>`; }).join('')}</div></section>`}`;
 }
 async function loadPhotos() {
   const ids = []; S.cmp.forEach(d => { const p = S.data.photos.find(x => x.day === d); if (p) { const id = (S.cmpSide === 'front' ? p.front : p.side) || p.side || p.front; if (id && !S.photoCache[id]) ids.push(id); } });
   for (const id of ids) { try { const r = await api('getPhoto', { fileId: id }); S.photoCache[id] = r.dataUrl; if (S.view === 'photo') route(); } catch (e) { /* 表示できない写真は空欄のまま */ } }
+}
+// ---------- 姿勢写真の位置合わせ（足首を中央線・頭〜かかとを同じ高さに） ----------
+const AL = { W: 900, H: 1200, TOP: 0.08, FOOT: 0.92 };
+let posePromise = null;
+function loadPose() {
+  if (posePromise) return posePromise;
+  const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  posePromise = (async () => {
+    const v = await import(base + '/vision_bundle.mjs');
+    const fs = await v.FilesetResolver.forVisionTasks(base + '/wasm');
+    return v.PoseLandmarker.createFromOptions(fs, {
+      baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate: 'CPU' },
+      runningMode: 'IMAGE', numPoses: 1
+    });
+  })();
+  posePromise.catch(() => { posePromise = null; });
+  return posePromise;
+}
+function loadImage(file, max) {
+  return new Promise((ok, ng) => {
+    const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => { const r = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * r); c.height = Math.round(img.height * r); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); ok(c); };
+    img.onerror = ng; img.src = u;
+  });
+}
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, ng) => setTimeout(() => ng(new Error('timeout')), ms))]);
+async function autoFit(src) {
+  const pose = await withTimeout(loadPose(), 25000);
+  const res = pose.detect(src);
+  const L = res && res.landmarks && res.landmarks[0];
+  if (!L) return null;
+  const px = i => L[i].x * src.width, py = i => L[i].y * src.height;
+  const shoulderY = (py(11) + py(12)) / 2, noseY = py(0);
+  const headTop = Math.min(...[0, 1, 2, 3, 4, 5, 6, 7, 8].map(py)) - Math.max(0, shoulderY - noseY) * 0.75;
+  const footY = Math.max(...[27, 28, 29, 30, 31, 32].map(py));
+  const cx = (px(27) + px(28)) / 2;
+  const h = footY - headTop;
+  if (!(h > 20)) return null;
+  const sc = AL.H * (AL.FOOT - AL.TOP) / h;
+  return { sc, tx: AL.W / 2 - sc * cx, ty: AL.H * AL.FOOT - sc * footY };
+}
+function fitWhole(src) {
+  const sc = Math.min(AL.W / src.width, AL.H / src.height);
+  return { sc, tx: (AL.W - src.width * sc) / 2, ty: (AL.H - src.height * sc) / 2 };
+}
+function drawAligned(ctx, src, t, k, guides) {
+  const W = AL.W * k, H = AL.H * k;
+  ctx.fillStyle = '#E9E6E0'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(src, t.tx * k, t.ty * k, src.width * t.sc * k, src.height * t.sc * k);
+  if (!guides) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(232,147,12,.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+  ctx.setLineDash([8, 6]); ctx.strokeStyle = 'rgba(31,107,92,.9)';
+  [AL.TOP, AL.FOOT].forEach(y => { ctx.beginPath(); ctx.moveTo(0, H * y); ctx.lineTo(W, H * y); ctx.stroke(); });
+  ctx.setLineDash([]); ctx.fillStyle = 'rgba(31,107,92,.95)'; ctx.font = `700 ${Math.round(13 * k * 1.6)}px sans-serif`;
+  ctx.fillText('頭のてっぺん', 8, H * AL.TOP - 6); ctx.fillText('かかと', 8, H * AL.FOOT - 6);
+  ctx.restore();
+}
+function alignPhoto(src, side) {
+  return new Promise(resolve => {
+    const box = document.createElement('div'); box.className = 'align-wrap';
+    box.innerHTML = `<div class="align-card" role="dialog" aria-modal="true" aria-label="写真の位置合わせ">
+      <h2>${side === 'front' ? '正面' : '横向き'}の写真の位置合わせ</h2>
+      <p class="align-msg" id="al-msg">自動で位置を合わせています…（初回は少し時間がかかります）</p>
+      <div class="align-stage"><canvas id="al-cv"></canvas></div>
+      <div class="align-zoom"><button type="button" data-al="out" aria-label="小さくする">－</button><input type="range" id="al-z" min="0.5" max="2" step="0.01" value="1" aria-label="大きさ"><button type="button" data-al="in" aria-label="大きくする">＋</button></div>
+      <p class="align-help">オレンジの線に<b>${side === 'front' ? '両足の真ん中' : '足首（くるぶし）'}</b>、点線に<b>頭のてっぺん</b>と<b>かかと</b>がくるように、指で動かして調整できます。</p>
+      <div class="align-btns"><button type="button" class="btn ghost" data-al="cancel">やめる</button><button type="button" class="btn ghost" data-al="auto">自動で合わせ直す</button><button type="button" class="btn" data-al="ok">この位置で保存</button></div></div>`;
+    document.body.appendChild(box);
+    const cv = box.querySelector('#al-cv'), ctx = cv.getContext('2d'), msg = box.querySelector('#al-msg'), z = box.querySelector('#al-z');
+    const stage = box.querySelector('.align-stage');
+    const k0 = Math.min(stage.clientWidth || 300, 420) / AL.W, dpr = window.devicePixelRatio || 1, k = k0 * dpr;
+    cv.width = Math.round(AL.W * k); cv.height = Math.round(AL.H * k); cv.style.width = Math.round(AL.W * k0) + 'px'; cv.style.height = Math.round(AL.H * k0) + 'px';
+    let t = fitWhole(src), base = t.sc;
+    const draw = () => drawAligned(ctx, src, t, k, true);
+    const setScale = (ns, cx = AL.W / 2, cy = AL.H / 2) => { ns = Math.max(base * 0.5, Math.min(base * 2, ns)); t.tx = cx - (cx - t.tx) * ns / t.sc; t.ty = cy - (cy - t.ty) * ns / t.sc; t.sc = ns; z.value = (t.sc / base).toFixed(2); draw(); };
+    const runAuto = async () => {
+      msg.textContent = '自動で位置を合わせています…（初回は少し時間がかかります）';
+      try { const a = await autoFit(src); if (a) { t = a; base = a.sc; z.value = 1; msg.textContent = '自動で合わせました。ずれていたら指で動かして調整してください。'; } else { msg.textContent = '体を見つけられませんでした。指で動かして合わせてください。'; } }
+      catch (e) { msg.textContent = '自動で合わせられませんでした。指で動かして合わせてください。'; }
+      draw();
+    };
+    draw(); runAuto();
+    const pts = new Map(); let last = null;
+    const toOut = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / k0, y: (e.clientY - r.top) / k0 }; };
+    cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, toOut(e)); last = null; });
+    cv.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      const prev = pts.get(e.pointerId), cur = toOut(e); pts.set(e.pointerId, cur);
+      if (pts.size === 1) { t.tx += cur.x - prev.x; t.ty += cur.y - prev.y; draw(); }
+      else if (pts.size === 2) { const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (last) setScale(t.sc * d / last, (a.x + b.x) / 2, (a.y + b.y) / 2); last = d; }
+    });
+    const up = e => { pts.delete(e.pointerId); last = null; };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    z.addEventListener('input', () => setScale(base * Number(z.value)));
+    const close = v => { box.remove(); resolve(v); };
+    box.addEventListener('click', e => {
+      const b = e.target.closest('[data-al]'); if (!b) return;
+      const a = b.dataset.al;
+      if (a === 'in') setScale(t.sc * 1.05); else if (a === 'out') setScale(t.sc / 1.05);
+      else if (a === 'auto') runAuto(); else if (a === 'cancel') close(null);
+      else if (a === 'ok') { const c = document.createElement('canvas'); c.width = AL.W; c.height = AL.H; drawAligned(c.getContext('2d'), src, t, 1, false); close(c.toDataURL('image/jpeg', .88)); }
+    });
+  });
 }
 function resize(file, max) {
   return new Promise((ok, ng) => {
@@ -582,9 +686,12 @@ document.addEventListener('change', async e => {
   const el = e.target;
   if ((el.id === 'ph-front' || el.id === 'ph-side') && el.files[0]) {
     const side = el.id === 'ph-front' ? 'front' : 'side';
+    const file = el.files[0]; el.value = '';
+    let dataUrl;
+    try { dataUrl = await alignPhoto(await loadImage(file, 1600), side); } catch (err) { toast('写真を読み込めませんでした'); return; }
+    if (!dataUrl) return;
     toast('写真を送っています…');
     try {
-      const dataUrl = await resize(el.files[0], 1400);
       const due = photoDue();
       const r = await api('uploadPhoto', { photo: { date: fmt(S.today), day: Math.max(S.day, 1), label: due ? due.l : '', side, dataUrl } });
       let p = S.data.photos.find(x => x.date === fmt(S.today));
