@@ -795,8 +795,34 @@ function burst() {
   let f = 0; (function tk() { x.clearRect(0, 0, c.width, c.height); ps.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += .35; p.a -= .012; x.globalAlpha = Math.max(p.a, 0); x.fillStyle = p.c; x.beginPath(); x.arc(p.x, p.y, p.r, 0, 7); x.fill(); }); if (++f < 90) requestAnimationFrame(tk); else x.clearRect(0, 0, c.width, c.height); })();
 }
 
+// ---------- 動画プレーヤー（Vimeoをサイト内で再生） ----------
+function vimeoEmbed(url) {
+  const m = String(url || '').match(/vimeo\.com\/(?:video\/)?(\d+)(?:\/([0-9a-f]+))?(?:.*[?&]h=([0-9a-f]+))?/i);
+  if (!m) return '';
+  const h = m[2] || m[3];
+  return 'https://player.vimeo.com/video/' + m[1] + '?' + (h ? 'h=' + h + '&' : '') + 'autoplay=1&title=0&byline=0&portrait=0&dnt=1';
+}
+function openPlayer(url, title) {
+  const src = vimeoEmbed(url); if (!src) return false;
+  const box = document.createElement('div'); box.className = 'player-wrap'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', '動画');
+  box.innerHTML = `<div class="player-card"><div class="player-h"><b>${esc(title || '動画')}</b><button type="button" class="player-x" aria-label="閉じる">×</button></div>
+    <div class="player-v"><iframe src="${esc(src)}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="${esc(title || '動画')}"></iframe></div>
+    <div class="player-f"><span>再生できないときは</span><a href="${esc(url)}" target="_blank" rel="noopener">Vimeoで開く</a></div></div>`;
+  document.body.appendChild(box); document.body.style.overflow = 'hidden';
+  const close = () => { box.remove(); document.body.style.overflow = ''; };
+  box.addEventListener('click', ev => { if (ev.target === box || ev.target.closest('.player-x')) close(); });
+  return true;
+}
+
 // ---------- 操作 ----------
 document.addEventListener('click', async e => {
+  const vl = e.target.closest('a[href*="vimeo.com"]');
+  if (vl && !vl.closest('.player-f')) {
+    const it = vl.closest('.item, .lec, .easier, .dict');
+    const tn = it ? (it.querySelector('.t, .lt, b') || it) : null, cd = tn && tn.querySelector('.code');
+    const title = tn ? ((cd ? cd.textContent + ' ' : '') + [...tn.childNodes].filter(x => x !== cd && !(x.matches && x.matches('small, .lvl'))).map(x => x.textContent).join('')).trim().slice(0, 60) : vl.textContent.trim();
+    if (openPlayer(vl.href, title)) e.preventDefault();
+  }
   const w = e.target.closest('[data-watch]');
   if (w && S.form && !S.watched.has(w.dataset.watch)) { S.form.checks['l' + w.dataset.watch] = true; setTimeout(() => saveDay('「' + w.dataset.watch + '」を見た動画として記録しました'), 300); }
   const t = e.target.closest('button'); if (!t) return;
