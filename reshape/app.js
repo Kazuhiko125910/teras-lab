@@ -63,6 +63,10 @@ async function start() {
 
 function load(d) {
   S.data = d; S.today = parseD(d.today) || new Date(); d.months = d.months || [];
+  // 講義の出し分け：「不使用」は出さない／「VIPのみ」はVIPだけに準備週の必修として出す
+  const vipM = d.member.plan === 'VIP';
+  d.content.lectures = d.content.lectures.filter(l => !/不使用/.test(l.status) && (vipM || !/VIPのみ/.test(l.kind + l.status)))
+    .map(l => /VIPのみ/.test(l.kind + l.status) ? Object.assign({}, l, { kind: '必修', week: l.week == null ? 0 : l.week, vipOnly: true }) : l);
   const m = d.member;
   const st = parseD(m.start);
   S.day = st ? dayDiff(S.today, st) + 1 : 0;
@@ -327,7 +331,8 @@ function zoomCard() {
   const link = /^https?:\/\//.test(m.zoomLink) ? m.zoomLink : '';
   return `<div class="zoom"><div class="zi"><span class="num">${no ? ZOOM_NO[no] : 'Z'}</span><small>/12</small></div><div><b>次のZoom面談　${md(at)}（${DOW[at.getDay()]}）${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}</b>
     <p>${n > 0 ? 'あと' + n + '日。' : n === 0 ? '今日です。' : ''}${photoDue() && photoDue().l.startsWith('Zoom') ? 'それまでに<strong>横向きの姿勢写真</strong>を撮っておきましょう。' : '気になっていることをメモしておきましょう。'}</p>
-    ${link ? `<p style="margin-top:8px"><a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Zoomに参加する</a></p>` : '<p style="margin-top:4px">参加リンクは前日までにここに表示されます。</p>'}</div></div>`;
+    ${link ? `<p style="margin-top:8px"><a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Zoomに参加する</a></p>` : '<p style="margin-top:4px">参加リンクは前日までにここに表示されます。</p>'}
+    ${(() => { const z = C().lectures.find(l => l.vipOnly && /zoom/i.test(l.title) && l.link); return z ? `<p style="margin-top:6px;font-size:12px">はじめての方は <a href="${esc(z.link)}" target="_blank" rel="noopener">${esc(z.code)} ${esc(z.title)}（${z.min || ''}分）</a></p>` : ''; })()}</div></div>`;
 }
 
 function supportBar() {
