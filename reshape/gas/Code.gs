@@ -286,8 +286,9 @@ function addMonths_(d, n) { const x = new Date(d.getTime()); x.setMonth(x.getMon
 
 function monthlyReminder() {
   const token = prop_('LINE_MESSAGING_TOKEN');
-  if (!token) { Logger.log('LINE_MESSAGING_TOKEN が未設定のため送信しません'); return; }
+  if (!token) throw new Error('LINE_MESSAGING_TOKEN が未設定のため、毎月の見直しリマインドを送れませんでした');
   ensureHeaders_(SH.month, MONTH_HEAD);
+  const failed = [];
   const today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
   const weekAgo = Utilities.formatDate(new Date(Date.now() - 7 * 864e5), TZ, 'yyyy/MM/dd');
   const months = table_(SH.month).rows;
@@ -317,9 +318,12 @@ function monthlyReminder() {
       upsert_(SH.month, x => String(x['会員ID']) === id && Number(x['月']) === n, { '会員ID': id, '名前': name, '期': c, '月': n, '見直し日': date, 'LINE通知日': today });
     } else {
       Logger.log('送信失敗 ' + name + '：' + res.getResponseCode() + ' ' + res.getContentText());
+      failed.push(name + '（' + res.getResponseCode() + (res.getResponseCode() === 400 || res.getResponseCode() === 403 ? '：ブロックまたは友だち未登録の可能性' : res.getResponseCode() === 401 ? '：トークンが無効' : res.getResponseCode() === 429 ? '：今月の送信数の上限' : '') + '）');
     }
   });
   Logger.log('毎月の見直しリマインド：' + sent + '件送信');
+  // 失敗があればエラーにする → Googleから加藤さんにエラー通知メールが届く
+  if (failed.length) throw new Error('毎月の見直しリマインドを送れなかった会員がいます：' + failed.join('、'));
 }
 
 /** 動作確認用：会員シートの「メモ」に「テスト送信」と書いた人にだけ、見直しの案内を送る */

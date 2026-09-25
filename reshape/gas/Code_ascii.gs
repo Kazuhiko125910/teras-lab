@@ -286,8 +286,9 @@ function addMonths_(d, n) { const x = new Date(d.getTime()); x.setMonth(x.getMon
 
 function monthlyReminder() {
   const token = prop_('LINE_MESSAGING_TOKEN');
-  if (!token) { Logger.log('LINE_MESSAGING_TOKEN \u304c\u672a\u8a2d\u5b9a\u306e\u305f\u3081\u9001\u4fe1\u3057\u307e\u305b\u3093'); return; }
+  if (!token) throw new Error('LINE_MESSAGING_TOKEN \u304c\u672a\u8a2d\u5b9a\u306e\u305f\u3081\u3001\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\u3092\u9001\u308c\u307e\u305b\u3093\u3067\u3057\u305f');
   ensureHeaders_(SH.month, MONTH_HEAD);
+  const failed = [];
   const today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
   const weekAgo = Utilities.formatDate(new Date(Date.now() - 7 * 864e5), TZ, 'yyyy/MM/dd');
   const months = table_(SH.month).rows;
@@ -317,9 +318,12 @@ function monthlyReminder() {
       upsert_(SH.month, x => String(x['\u4f1a\u54e1ID']) === id && Number(x['\u6708']) === n, { '\u4f1a\u54e1ID': id, '\u540d\u524d': name, '\u671f': c, '\u6708': n, '\u898b\u76f4\u3057\u65e5': date, 'LINE\u901a\u77e5\u65e5': today });
     } else {
       Logger.log('\u9001\u4fe1\u5931\u6557 ' + name + '\uff1a' + res.getResponseCode() + ' ' + res.getContentText());
+      failed.push(name + '\uff08' + res.getResponseCode() + (res.getResponseCode() === 400 || res.getResponseCode() === 403 ? '\uff1a\u30d6\u30ed\u30c3\u30af\u307e\u305f\u306f\u53cb\u3060\u3061\u672a\u767b\u9332\u306e\u53ef\u80fd\u6027' : res.getResponseCode() === 401 ? '\uff1a\u30c8\u30fc\u30af\u30f3\u304c\u7121\u52b9' : res.getResponseCode() === 429 ? '\uff1a\u4eca\u6708\u306e\u9001\u4fe1\u6570\u306e\u4e0a\u9650' : '') + '\uff09');
     }
   });
   Logger.log('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff1a' + sent + '\u4ef6\u9001\u4fe1');
+  // \u5931\u6557\u304c\u3042\u308c\u3070\u30a8\u30e9\u30fc\u306b\u3059\u308b \u2192 Google\u304b\u3089\u52a0\u85e4\u3055\u3093\u306b\u30a8\u30e9\u30fc\u901a\u77e5\u30e1\u30fc\u30eb\u304c\u5c4a\u304f
+  if (failed.length) throw new Error('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\u3092\u9001\u308c\u306a\u304b\u3063\u305f\u4f1a\u54e1\u304c\u3044\u307e\u3059\uff1a' + failed.join('\u3001'));
 }
 
 /** \u52d5\u4f5c\u78ba\u8a8d\u7528\uff1a\u4f1a\u54e1\u30b7\u30fc\u30c8\u306e\u300c\u30e1\u30e2\u300d\u306b\u300c\u30c6\u30b9\u30c8\u9001\u4fe1\u300d\u3068\u66f8\u3044\u305f\u4eba\u306b\u3060\u3051\u3001\u898b\u76f4\u3057\u306e\u6848\u5185\u3092\u9001\u308b */
