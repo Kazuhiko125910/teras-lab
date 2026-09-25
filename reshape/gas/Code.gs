@@ -515,10 +515,13 @@ function table_(name) {
   return { rows: rows, col: col, head: head, sheet: sh };
 }
 
+// 1列目が空いている一番上の行に書く（ARRAYFORMULA の列には書き込まない）
 function appendRow_(name, obj) {
   const t = table_(name);
-  const row = t.head.map(h => obj[h] !== undefined ? obj[h] : '');
-  t.sheet.appendRow(row);
+  const idx = t.rows.findIndex(r => r[t.head[0]] === '' || r[t.head[0]] === null);
+  if (idx < 0) { t.sheet.appendRow(t.head.map(h => obj[h] !== undefined ? obj[h] : '')); return; }
+  const rowNo = t.rows[idx]._row;
+  t.head.forEach((h, j) => { if (h && obj[h] !== undefined && obj[h] !== '') t.sheet.getRange(rowNo, j + 1).setValue(obj[h]); });
 }
 
 function upsert_(name, pred, obj) {
@@ -530,7 +533,7 @@ function upsert_(name, pred, obj) {
       const cur = t.head.map(h => obj[h] !== undefined ? obj[h] : found[h]);
       t.sheet.getRange(found._row, 1, 1, cur.length).setValues([cur]);
     } else {
-      t.sheet.appendRow(t.head.map(h => obj[h] !== undefined ? obj[h] : ''));
+      appendRow_(name, obj);
     }
   } finally { lock.releaseLock(); }
 }

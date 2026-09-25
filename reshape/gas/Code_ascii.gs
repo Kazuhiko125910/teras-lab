@@ -515,10 +515,13 @@ function table_(name) {
   return { rows: rows, col: col, head: head, sheet: sh };
 }
 
+// 1\u5217\u76ee\u304c\u7a7a\u3044\u3066\u3044\u308b\u4e00\u756a\u4e0a\u306e\u884c\u306b\u66f8\u304f\uff08ARRAYFORMULA \u306e\u5217\u306b\u306f\u66f8\u304d\u8fbc\u307e\u306a\u3044\uff09
 function appendRow_(name, obj) {
   const t = table_(name);
-  const row = t.head.map(h => obj[h] !== undefined ? obj[h] : '');
-  t.sheet.appendRow(row);
+  const idx = t.rows.findIndex(r => r[t.head[0]] === '' || r[t.head[0]] === null);
+  if (idx < 0) { t.sheet.appendRow(t.head.map(h => obj[h] !== undefined ? obj[h] : '')); return; }
+  const rowNo = t.rows[idx]._row;
+  t.head.forEach((h, j) => { if (h && obj[h] !== undefined && obj[h] !== '') t.sheet.getRange(rowNo, j + 1).setValue(obj[h]); });
 }
 
 function upsert_(name, pred, obj) {
@@ -530,7 +533,7 @@ function upsert_(name, pred, obj) {
       const cur = t.head.map(h => obj[h] !== undefined ? obj[h] : found[h]);
       t.sheet.getRange(found._row, 1, 1, cur.length).setValues([cur]);
     } else {
-      t.sheet.appendRow(t.head.map(h => obj[h] !== undefined ? obj[h] : ''));
+      appendRow_(name, obj);
     }
   } finally { lock.releaseLock(); }
 }
