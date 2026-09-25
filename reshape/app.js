@@ -7,7 +7,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const DOW = '日月火水木金土';
 const ZOOM_NO = { 2: '①', 4: '②', 6: '③', 8: '④', 10: '⑤', 13: '⑥', 15: '⑦', 17: '⑧', 19: '⑨', 21: '⑩', 23: '⑪', 26: '⑫' };
 const NAY = ['腰痛', '肩こり', '首こり', '猫背', '巻き肩', '反り腰', 'ぽっこりお腹', '膝の痛み', '体重', '疲れやすい', 'O脚・X脚', '見た目の老け感'];
-const WORK_STEPS = ['いまの私', '変わりたい理由', '6ヶ月後の私', '卒業目標を数字に', '続けるための約束', '確認と宣言'];
+const WORK_STEPS = ['いまの私', '変わりたい理由', '6ヶ月後の私', '6ヶ月後の目標を数字に', '毎月の中間目標', '続けるための約束', '確認と宣言'];
 
 // ---------- 日付 ----------
 const parseD = s => { const m = String(s || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/); return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)) : null; };
@@ -22,7 +22,7 @@ const S = {
   view: 'today', auth: {}, demo: false, data: null, today: null, day: 0, week: 0,
   form: null, watched: new Set(), photoCache: {}, cmp: [], cmpSide: 'side', chart: 0, sel: null,
   chat: [{ r: 'bot', t: 'こんにちは、食事サポートです🍚\n食べたものの写真か、内容を送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。' }],
-  work: null, ws: -1, busy: false
+  work: null, ws: -1, busy: false, rv: null
 };
 
 // ---------- 通信 ----------
@@ -62,7 +62,7 @@ async function start() {
 }
 
 function load(d) {
-  S.data = d; S.today = parseD(d.today) || new Date();
+  S.data = d; S.today = parseD(d.today) || new Date(); d.months = d.months || [];
   const m = d.member;
   const st = parseD(m.start);
   S.day = st ? dayDiff(S.today, st) + 1 : 0;
@@ -96,10 +96,10 @@ function mode() {
   if (m.status === '卒業生') return 'grad';
   if (!goalSet()) return 'work';
   if (m.status === '承認待ち' || !m.start) return 'waiting';
-  const end = supportEnd();
-  if (end && dayDiff(S.today, end) > 0) return 'ended';
+  if (S.day > 182) return 'grad';
   return 'member';
 }
+function supportOver() { const e = supportEnd(); return !!(e && dayDiff(S.today, e) > 0); }
 const goalSet = () => !!(S.data.member.goal.setAt || S.data.member.goal.targets.length);
 
 function supportEnd() {
@@ -110,20 +110,113 @@ function supportEnd() {
   return e;
 }
 
+// ---------- 毎月の中間目標と見直し ----------
+const mStart = () => parseD(S.data.member.start);
+const monthDate = n => { const st = mStart(); return st ? addMonths(st, n) : null; };
+function monthsPassed() { const st = mStart(); if (!st) return 0; let n = 0; while (n < 120 && dayDiff(S.today, addMonths(st, n + 1)) >= 0) n++; return n; }
+const cycOf = n => Math.max(1, Math.ceil(n / 6));
+const kOf = n => n - 6 * (cycOf(n) - 1);
+const curCycle = () => Math.floor(monthsPassed() / 6) + 1;
+const goalCyc = () => S.data.member.goalCycle || (goalSet() ? 1 : 0);
+const monthRow = n => S.data.months.find(x => x.n === n);
+const decOf = v => { const m = String(v ?? '').match(/\.(\d+)/); return m ? m[1].length : 0; };
+function rnd(v, a, b) { let d = Math.max(decOf(a), decOf(b)); if (!d && Math.abs(b - a) < 6) d = 1; return +v.toFixed(Math.min(d, 1)); }
+function msTarget(i, n) {
+  const r = monthRow(n); if (r && r.targets[i] != null) return r.targets[i];
+  const t = S.data.member.goal.targets[i]; if (!t || t.start == null || t.target == null) return null;
+  return rnd(t.start + (t.target - t.start) * kOf(n) / 6, t.start, t.target);
+}
+function hitOf(t, now, target) { if (now == null || target == null || t.start == null || t.target == null) return false; return t.target < t.start ? now <= target : now >= target; }
+function reviewDue() { if (!goalSet() || !mStart()) return null; const p = monthsPassed(); if (p < 1 || p > 6 * goalCyc()) return null; const r = monthRow(p); return r && r.doneAt ? null : p; }
+function needNewGoals() { if (!goalSet() || !mStart()) return false; const p = monthsPassed(), end = 6 * goalCyc(); return p > end || (p === end && !!(monthRow(p) || {}).doneAt); }
+function cycleDays(c) { const st = mStart(); if (!st) return [1, 182]; return [c > 1 ? dayDiff(monthDate(6 * (c - 1)), st) + 1 : 1, dayDiff(monthDate(6 * c), st) + 1]; }
+function nextReview() { const p = monthsPassed(), n = p + 1; return n <= 6 * goalCyc() ? n : null; }
+function reviewCard() {
+  if (!goalSet() || !mStart()) return '';
+  if (needNewGoals()) return `<section class="rv-card"><div><b>第${curCycle()}期の目標を決めましょう</b><p>6ヶ月、おつかれさまでした。次の6ヶ月の目標と、毎月の中間目標を決めます（約10分）。</p></div><button type="button" class="btn" id="goal-next">目標を決める</button></section>`;
+  const due = reviewDue();
+  if (due) return `<section class="rv-card"><div><b>${due % 6 === 0 ? '6ヶ月の最終見直し' : kOf(due) + 'ヶ月目の見直し'}の日です</b><p>今の数字を入れて、中間目標までの進み具合を確認しましょう（約3分）。</p></div><button type="button" class="btn" data-v="review">見直しをする</button></section>`;
+  return '';
+}
+function progressBlock() {
+  const g = S.data.member.goal, c = goalCyc(); if (!g.targets.length || !c) return '';
+  const ns = [1, 2, 3, 4, 5, 6].map(k => 6 * (c - 1) + k), nx = nextReview();
+  return g.targets.map((t, i) => `<div class="mt"><div class="mt-h"><b>${esc(nameOf(t.label))}</b><span class="num">${t.start ?? '—'} → ${t.target ?? '—'}${esc(unitOf(t.label))}</span></div>
+    <table><thead><tr><th>月</th><th>見直し日</th><th>中間目標</th><th>実績</th><th></th></tr></thead><tbody>${ns.map(n => { const r = monthRow(n), d = monthDate(n), tg = msTarget(i, n), a = r && r.doneAt ? r.actual[i] : null, past = d && dayDiff(S.today, d) >= 0;
+      return `<tr class="${nx === n ? 'cur' : ''}"><td>${kOf(n)}ヶ月目</td><td class="num">${d ? md(d) : '—'}</td><td class="num">${tg ?? '—'}</td><td class="num">${a ?? (past && !(r && r.doneAt) ? '<span class="miss">未記入</span>' : '')}</td><td>${a != null ? (hitOf(t, a, tg) ? '<span class="pill good">達成</span>' : '<span class="pill warn">もう少し</span>') : nx === n ? '<span class="pill">次回</span>' : ''}</td></tr>`; }).join('')}</tbody></table></div>`).join('');
+}
+function vReview() {
+  const g = S.data.member.goal;
+  const back = `<button type="button" class="linkbtn" data-v="today">← 今日の画面へ</button>`;
+  if (!goalSet() || !mStart()) return `<section class="card msgcard"><h2>毎月の見直し</h2><p>目標と開始日が決まると、ここで毎月の見直しができます。</p>${back}</section>`;
+  const due = reviewDue(), c = goalCyc();
+  let top = '';
+  if (due && !S.busy) {
+    if (!S.rv || S.rv.n !== due) S.rv = { n: due, actual: g.targets.map((t, i) => { const sr = goalSeries(i); return sr.length ? String(sr[sr.length - 1][1]) : ''; }), good: '', bad: '', next: '', nt: g.targets.map((t, i) => String(msTarget(i, due + 1) ?? '')) };
+    const R = S.rv, fin = due % 6 === 0;
+    top = `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>${fin ? '6ヶ月の最終見直し' : kOf(due) + 'ヶ月目の見直し'}</h2><span class="aside">第${cycOf(due)}期・${md(monthDate(due))}</span></div>
+    <div class="card rv-form">
+      <div class="rv-step"><b>1</b>今の数字を入れる</div>
+      ${g.targets.map((t, i) => { const tg = msTarget(i, due); return `<div class="rv-g"><div class="rv-h"><b>${esc(nameOf(t.label))}</b><span>${fin ? '6ヶ月の目標' : '今月の中間目標'} <b class="num">${tg ?? '—'}</b>${esc(unitOf(t.label))}</span></div><div class="rv-in"><input type="text" inputmode="decimal" aria-label="${esc(nameOf(t.label))}の今の数字" data-rva="${i}" value="${esc(R.actual[i])}"><span class="u">${esc(unitOf(t.label))}</span><span id="rvp-${i}">${rvPill(i)}</span></div></div>`; }).join('')}
+      <div class="rv-step"><b>2</b>ふり返り</div>
+      <div class="q"><label for="rv-good">うまくいったこと</label><textarea id="rv-good" data-rvt="good" placeholder="例：朝のストレッチは毎日できた">${esc(R.good)}</textarea></div>
+      <div class="q"><label for="rv-bad">うまくいかなかったこと</label><textarea id="rv-bad" data-rvt="bad" placeholder="例：週末に記録を忘れがちだった">${esc(R.bad)}</textarea></div>
+      <div class="q"><label for="rv-next">${fin ? '次の6ヶ月にいかしたいこと' : '来月の工夫'}</label><textarea id="rv-next" data-rvt="next" placeholder="例：土日は昼食後にやると決める">${esc(R.next)}</textarea></div>
+      ${fin ? `<div class="hint">6ヶ月の目標3つのうち、2つ以上の達成がゴールです。保存したあと、次の6ヶ月の目標を決めます。</div>` : `<div class="rv-step"><b>3</b>来月（${md(monthDate(due + 1))}）の中間目標</div>
+      ${g.targets.map((t, i) => `<div class="rv-g"><div class="rv-h"><b>${esc(nameOf(t.label))}</b><span>6ヶ月後 <b class="num">${t.target ?? '—'}</b>${esc(unitOf(t.label))}</span></div><div class="rv-in"><input type="text" inputmode="decimal" aria-label="${esc(nameOf(t.label))}の来月の中間目標" data-rvn="${i}" value="${esc(R.nt[i])}"><span class="u">${esc(unitOf(t.label))}</span></div></div>`).join('')}
+      <div class="hint">今月の結果を見て、無理なく届きそうな数字に調整しましょう。</div>`}
+      <button type="button" class="save" id="rv-save">見直しを保存</button></div></section>`;
+  } else if (S.rv && S.rv.saved) {
+    const R = S.rv, fin = R.n % 6 === 0;
+    top = `<section class="card msgcard" style="margin-top:4px"><h2>${fin ? '6ヶ月の最終見直し' : kOf(R.n) + 'ヶ月目の見直し'}、できました</h2><p>${fin ? '6ヶ月の目標' : '今月の中間目標'}：3つのうち <b class="num">${R.hit}</b> つ達成。${fin ? (R.hit >= 2 ? '目標クリアです。本当におつかれさまでした。' : 'ここまで続けてきたことが一番の財産です。') : 'この調子で、来月も一歩ずつ進みましょう。'}</p></section>`;
+  }
+  const nx = nextReview();
+  const hist = S.data.months.filter(x => x.doneAt).sort((a, b) => b.n - a.n);
+  return `${back}${top}${reviewCard()}
+  <section class="sec"><div class="sec-h"><h2>中間目標の進み具合</h2><span class="aside">${nx && !due ? '次の見直し ' + md(monthDate(nx)) + '（あと' + dayDiff(monthDate(nx), S.today) + '日）' : '第' + c + '期'}</span></div>
+  <div class="card">${progressBlock() || '<p style="padding:14px;color:var(--muted);font-size:13px">目標を決めると表示されます。</p>'}</div></section>
+  ${hist.length ? `<section class="sec"><div class="sec-h"><h2>これまでのふり返り</h2></div><div class="card">${hist.map(x => `<div class="rv-hist"><div class="rv-hh"><b>第${cycOf(x.n)}期 ${kOf(x.n)}ヶ月目</b><span class="num">${esc(x.doneAt)}・達成 ${x.hit ?? '—'}</span></div>${x.good ? `<p><small>うまくいったこと</small>${esc(x.good)}</p>` : ''}${x.bad ? `<p><small>うまくいかなかったこと</small>${esc(x.bad)}</p>` : ''}${x.next ? `<p><small>次の工夫</small>${esc(x.next)}</p>` : ''}</div>`).join('')}</div></section>` : ''}`;
+}
+function rvPill(i) {
+  const R = S.rv, t = S.data.member.goal.targets[i], v = R.actual[i] === '' ? NaN : Number(R.actual[i]), tg = msTarget(i, R.n);
+  if (isNaN(v) || tg == null) return '';
+  return hitOf(t, v, tg) ? '<span class="pill good">達成</span>' : `<span class="pill warn">あと ${+Math.abs(tg - v).toFixed(1)}</span>`;
+}
+async function saveReview() {
+  const R = S.rv, g = S.data.member.goal, n = R.n, fin = n % 6 === 0;
+  const actual = [0, 1, 2].map(i => R.actual[i] == null || R.actual[i] === '' || isNaN(Number(R.actual[i])) ? null : Number(R.actual[i]));
+  if (actual.every(x => x == null)) { toast('今の数字を1つ以上入れてください'); return; }
+  const nt = [0, 1, 2].map(i => R.nt[i] == null || R.nt[i] === '' || isNaN(Number(R.nt[i])) ? null : Number(R.nt[i]));
+  const targets = g.targets.map((t, i) => msTarget(i, n));
+  const hit = g.targets.filter((t, i) => hitOf(t, actual[i], targets[i])).length;
+  const review = { n, cycle: cycOf(n), date: fmt(monthDate(n)), actual, targets, hit, good: R.good, bad: R.bad, next: R.next, nextTargets: fin ? null : nt, nextDate: fin ? '' : fmt(monthDate(n + 1)) };
+  S.busy = true; route();
+  try {
+    const r = await api('saveReview', { review });
+    S.data.months = r.months || S.data.months;
+    R.saved = true; R.hit = hit;
+    actual.forEach((v, i) => { if (v == null) return; const k = S.goalLink[i]; if (k >= 0) S.form.v[k] = v; else S.form.g[i] = v; });
+    S.busy = false;
+    if (S.mode === 'grad') S.P = { train: [], D: null };
+    await saveDay('見直しを保存しました');
+    scrollTo(0, 0);
+  } catch (e) { S.busy = false; route(); toast('保存できませんでした。通信を確認してもう一度押してください'); }
+}
+
 function route() {
   const md_ = S.forceWork ? 'work' : mode();
   S.mode = md_;
   const tabsOn = md_ === 'member' || md_ === 'grad' || md_ === 'ended';
   $('#tabs').hidden = !tabsOn;
-  $('#tabs').querySelector('[data-v="meal"]').hidden = md_ === 'ended';
-  $('#tabs').querySelector('[data-v="map"]').hidden = md_ === 'ended';
+  $('#tabs').querySelector('[data-v="meal"]').hidden = supportOver();
   let html;
   if (md_ === 'stopped') html = `<section class="card msgcard"><h2>ご利用を停止しています</h2><p>ご不明な点は公式LINEでお問い合わせください。</p></section>`;
   else if (md_ === 'work') html = vWork();
   else if (md_ === 'waiting') html = vWaiting();
   else {
     const v = S.view;
-    if (v === 'log') html = vLog();
+    if (v === 'review') html = vReview();
+    else if (v === 'log') html = vLog();
     else if (v === 'photo') html = vPhoto();
     else if (v === 'map') html = vMap();
     else if (v === 'meal') html = vMeal();
@@ -241,36 +334,43 @@ function supportBar() {
   const e = supportEnd(); if (!e) return '';
   const n = dayDiff(e, S.today);
   const vip = S.data.member.plan === 'VIP';
+  if (n < 0) return `<div class="support"><b>${vip ? 'サポート期間' : 'LINEでの質問サポート'}は${md(e)}で終了しました</b>記録・動画・毎月の見直しは、このまま続けられます。</div>`;
   return `<div class="support"><b>${vip ? 'サポート期間' : 'LINEでの質問サポート'}：${md(e)}まで</b>${n <= 30 ? 'あと' + n + '日です。延長や、その後のご案内は担当からご連絡します。' : '気になることは公式LINEで気軽に質問してください。'}</div>`;
 }
 
 function goalCard() {
   const g = S.data.member.goal;
   if (!goalSet()) return `<section class="goal card gcta"><div class="gk">MY GOAL</div><h2 style="margin-top:6px">まだ目標が決まっていません</h2><p>卒業のときに達成したい目標を、最初に具体的に決めましょう（約10分）。</p><button type="button" id="goal-start">目標設定をはじめる</button></section>`;
-  return `<section class="goal card" aria-label="わたしの目標"><button type="button" class="gedit" id="goal-edit">編集</button><div class="gk">MY GOAL・卒業目標</div><div class="gt">${esc(g.scene)}</div>${g.needs ? `<div class="needs">お悩み：${esc(g.needs)}</div>` : ''}
+  return `<section class="goal card" aria-label="わたしの目標"><button type="button" class="gedit" id="goal-edit">編集</button><div class="gk">MY GOAL・${goalCyc() > 1 ? '第' + goalCyc() + '期の目標' : '卒業目標'}</div><div class="gt">${esc(g.scene)}</div>${g.needs ? `<div class="needs">お悩み：${esc(g.needs)}</div>` : ''}
     <div class="gl">${g.targets.map((t, i) => goalRow(t, i)).join('')}</div>
-    <div class="gfoot">卒業の条件：DAY182の測定③で、卒業目標3つのうち2つ以上を達成すること</div>
+    <div class="gfoot">${goalCyc() > 1 ? '第' + goalCyc() + '期のゴール：' + md(monthDate(6 * goalCyc())) + 'の最終見直しで、3つのうち2つ以上の達成' : '卒業の条件：DAY182の測定③で、卒業目標3つのうち2つ以上を達成すること'}${nextReview() && mStart() ? '<br>次の見直し：' + md(monthDate(nextReview())) + '（あと' + dayDiff(monthDate(nextReview()), S.today) + '日）<button type="button" class="linkbtn" data-v="review">進み具合を見る</button>' : ''}</div>
     ${S.data.member.coach ? `<div class="coach"><i>加藤</i><div><small>担当からひとこと</small>${esc(S.data.member.coach)}</div></div>` : ''}</section>`;
 }
 function goalSeries(i) {
   const t = S.data.member.goal.targets[i], k = S.goalLink[i];
-  const st = parseD(S.data.member.start);
-  const pts = S.data.records.map(r => { const v = k >= 0 ? r.v[k] : r.g[i]; const d = parseD(r.date); return v != null && d && st ? [dayDiff(d, st) + 1, v] : null; }).filter(Boolean).sort((a, b) => a[0] - b[0]);
-  if (t.start != null && (!pts.length || pts[0][0] > 1)) pts.unshift([1, t.start]);
+  const st = parseD(S.data.member.start), d0 = cycleDays(goalCyc() || 1)[0];
+  const pts = S.data.records.map(r => { const v = k >= 0 ? r.v[k] : r.g[i]; const d = parseD(r.date); return v != null && d && st ? [dayDiff(d, st) + 1, v] : null; }).filter(p => p && p[0] >= d0).sort((a, b) => a[0] - b[0]);
+  if (t.start != null && (!pts.length || pts[0][0] > d0)) pts.unshift([d0, t.start]);
   return pts;
 }
 function achieved(t, now) { if (now == null || t.target == null || t.start == null) return false; return t.target < t.start ? now <= t.target : now >= t.target; }
 function goalRow(t, i) {
   const ser = goalSeries(i), now = ser.length ? ser[ser.length - 1][1] : null, u = unitOf(t.label);
   const left = now != null && t.target != null ? Math.abs(t.target - now) : null;
-  return `<div><div class="top"><b>${esc(nameOf(t.label))}</b><span>${achieved(t, now) ? '達成！' : left != null ? '達成まであと <span class="num">' + (+left.toFixed(1)) + '</span>' + esc(u) : ''}</span></div>${ser.length > 1 ? mini(ser, t.start, t.target) : ''}<div class="vals"><span>スタート <span class="num">${t.start ?? '—'}</span></span><span>いま <em class="num">${now ?? '—'}</em>${esc(u)}</span><span>目標 <span class="num">${t.target ?? '—'}</span></span></div></div>`;
+  const nx = nextReview(), mt = nx && mStart() ? msTarget(i, nx) : null;
+  const dots = mStart() ? [1, 2, 3, 4, 5, 6].map(k => { const n = 6 * ((goalCyc() || 1) - 1) + k, v = msTarget(i, n); return v != null ? [dayDiff(monthDate(n), mStart()) + 1, v] : null; }).filter(Boolean) : [];
+  return `<div><div class="top"><b>${esc(nameOf(t.label))}</b><span>${achieved(t, now) ? '達成！' : left != null ? '達成まであと <span class="num">' + (+left.toFixed(1)) + '</span>' + esc(u) : ''}</span></div>${ser.length > 1 || dots.length ? mini(ser, t.start, t.target, dots) : ''}<div class="vals"><span>スタート <span class="num">${t.start ?? '—'}</span></span><span>いま <em class="num">${now ?? '—'}</em>${esc(u)}</span>${mt != null ? `<span>今月の中間 <span class="num">${mt}</span></span>` : ''}<span>目標 <span class="num">${t.target ?? '—'}</span></span></div></div>`;
 }
-function mini(ser, start, goal) {
-  const W = 320, H = 64, pl = 4, pr = 40, pt = 8, pb = 8; const ys = [...ser.map(p => p[1]), start, goal].filter(v => v != null);
+function mini(ser, start, goal, dots) {
+  dots = dots || [];
+  const W = 320, H = 64, pl = 4, pr = 40, pt = 8, pb = 8; const ys = [...ser.map(p => p[1]), ...dots.map(p => p[1]), start, goal].filter(v => v != null);
   let lo = Math.min(...ys), hi = Math.max(...ys); const pad = (hi - lo) * .12 || 1; lo -= pad; hi += pad;
-  const X = d => pl + (Math.min(d, 182) - 1) / 181 * (W - pl - pr), Y = v => pt + (1 - (v - lo) / (hi - lo)) * (H - pt - pb);
+  const [d0, d1] = cycleDays(goalCyc() || 1);
+  const X = d => pl + (Math.max(d0, Math.min(d, d1)) - d0) / Math.max(1, d1 - d0) * (W - pl - pr), Y = v => pt + (1 - (v - lo) / (hi - lo)) * (H - pt - pb);
+  if (!ser.length) ser = [[d0, start]];
   const line = ser.map(p => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' '), last = ser[ser.length - 1];
-  return `<svg class="gchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="推移のグラフ">${goal != null ? `<line x1="${pl}" x2="${W - pr}" y1="${Y(goal)}" y2="${Y(goal)}" stroke="var(--sun)" stroke-dasharray="4 4"/><text x="${W - pr + 4}" y="${Y(goal) + 4}" font-size="11" fill="var(--sun-ink)" font-weight="700">目標</text>` : ''}<line x1="${X(Math.max(S.day, 1))}" x2="${X(Math.max(S.day, 1))}" y1="${pt}" y2="${H - pb}" stroke="var(--line)"/><polyline points="${line}" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="4.5" fill="var(--primary)" stroke="var(--surface)" stroke-width="2"/><text x="${W - pr + 4}" y="${H - pb}" font-size="10" fill="var(--faint)">D182</text></svg>`;
+  const dotSvg = dots.map(p => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3" fill="var(--surface)" stroke="var(--sun)" stroke-width="1.6"/>`).join('');
+  return `<svg class="gchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="推移のグラフ">${goal != null ? `<line x1="${pl}" x2="${W - pr}" y1="${Y(goal)}" y2="${Y(goal)}" stroke="var(--sun)" stroke-dasharray="4 4"/><text x="${W - pr + 4}" y="${Y(goal) + 4}" font-size="11" fill="var(--sun-ink)" font-weight="700">目標</text>` : ''}<line x1="${X(Math.max(S.day, 1))}" x2="${X(Math.max(S.day, 1))}" y1="${pt}" y2="${H - pb}" stroke="var(--line)"/>${dotSvg}<polyline points="${line}" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${X(last[0])}" cy="${Y(last[1])}" r="4.5" fill="var(--primary)" stroke="var(--surface)" stroke-width="2"/><text x="${W - pr + 4}" y="${H - pb}" font-size="10" fill="var(--faint)">6ヶ月</text></svg>`;
 }
 
 function vToday() {
@@ -286,7 +386,7 @@ function vToday() {
   const done = Object.keys(S.form.checks).filter(k => S.form.checks[k] && (P.body.some(i => i.k === k) || trainItems.some(i => i.k === k) || head.some(i => i.k === k))).length + (S.form.mirror ? 1 : 0);
   const goalFields = m.goal.targets.map((t, i) => ({ t, i })).filter(x => S.goalLink[x.i] < 0);
   const tw = String(P.R.freq || '');
-  return hero() + `
+  return hero() + reviewCard() + `
   <div class="meter"><div class="dots" aria-label="今週の記録 ${wr}日">${[1, 2, 3].map(i => `<span class="${i <= wr ? 'on' : ''}">${i <= wr ? '✓' : i}</span>`).join('')}</div>
     <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${wr >= 3 ? '今週の延長保証ラインをクリアしました' : 'あと' + (3 - wr) + '日で今週の延長保証ラインをクリア'}</p></div></div>
   ${zoomCard()}${supportBar()}
@@ -329,8 +429,8 @@ function vGrad() {
   const st = parseD(S.data.member.start), since = st ? Math.max(0, S.day - 182) : 0;
   const D = dailyOf(S.day);
   const items = D ? [['s1', D[3]], ['s2', D[4]]].map(([k, c]) => C().stretch[c] ? { k, code: c, t: C().stretch[c][0], link: C().stretch[c][1], s: 'ストレッチ' } : null).filter(Boolean) : [];
-  return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">RESHAPE 卒業生</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span><span class="chip">卒業目標 ${n}/${res.length} 達成</span><span class="chip">卒業生コミュニティ</span></div></div>${spine(1)}</div></section>
-  <section class="goal card"><div class="gk">RESULT・卒業時の結果</div><div class="res" style="padding:10px 0 0">${res.map(r => `<div><i class="${r.ok ? 'ok' : 'ng'}">${r.ok ? '✓' : '…'}</i><span>${esc(nameOf(r.t.label))}</span><span class="num"><b>${r.t.start ?? '—'} → ${r.now ?? '—'}</b>${esc(unitOf(r.t.label))}</span></div>`).join('')}</div></section>
+  return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">${S.data.member.status === '卒業生' ? 'RESHAPE 卒業生' : 'RESHAPE 第' + curCycle() + '期'}</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span><span class="chip">卒業目標 ${n}/${res.length} 達成</span><span class="chip">卒業生コミュニティ</span></div></div>${spine(1)}</div></section>
+  ${reviewCard()}${goalCard()}
   <div class="meter"><div class="dots">${[1, 2, 3].map(i => `<span class="${i <= Math.min(3, recThisCalWeek()) ? 'on' : ''}">${i <= recThisCalWeek() ? '✓' : i}</span>`).join('')}</div><div><b>今週 ${recThisCalWeek()}日</b><p>卒業後も、週3日を目安に続けましょう</p></div></div>
   <section class="sec"><div class="sec-h"><h2>今日のストレッチ</h2></div><div class="card">${items.map(row).join('')}<div class="note">困ったときは「道のり」の辞書から選べます。</div></div></section>
   ${recordBlock()}`;
@@ -373,7 +473,9 @@ function vLog() {
   const badges = [[7, '1週間'], [21, '3週間'], [30, '1ヶ月'], [60, '2ヶ月'], [91, '折り返し'], [120, '4ヶ月'], [150, '5ヶ月'], [182, '完走']];
   const series = S.fields.map((f, i) => ({ f, i, pts: S.data.records.map(r => { const d = parseD(r.date); return r.v[i] != null && d ? [dayDiff(d, st) + 1, r.v[i]] : null; }).filter(Boolean).sort((a, b) => a[0] - b[0]) }));
   const cur = series[S.chart] || series[0];
-  return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>記録カレンダー</h2><span class="aside">日付を押すと中身が見られます</span></div>
+  const prog = progressBlock();
+  return `${prog ? `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>毎月の中間目標</h2><button type="button" class="linkbtn" data-v="review">見直しページへ</button></div><div class="card">${prog}</div></section>` : ''}
+  <section class="sec" style="margin-top:4px"><div class="sec-h"><h2>記録カレンダー</h2><span class="aside">日付を押すと中身が見られます</span></div>
   <div class="card"><div class="cal">${'日月火水木金土'.split('').map(x => `<span class="dh">${x}</span>`).join('')}${cells}</div>
   <div class="legend"><span><i style="background:var(--primary)"></i>できた</span><span><i style="background:var(--primary-soft)"></i>一部</span><span><i style="border:1.5px dashed var(--line)"></i>記録なし</span><span><i style="background:var(--sun);border-radius:50%"></i>姿勢写真</span></div>${det}</div></section>
   <section class="sec"><div class="sec-h"><h2>変化のグラフ</h2></div>
@@ -562,6 +664,7 @@ function vMap() {
 // ---------- 食事 ----------
 function vMeal() {
   const vip = S.data.member.plan === 'VIP';
+  if (supportOver()) return `<section class="card msgcard"><h2>食事サポート</h2><p>食事サポートは、サポート期間（${md(supportEnd())}まで）で終了しました。</p></section>`;
   S.chat[0].t = vip ? 'こんにちは、食事サポートです🍚\n食べたものの写真か、内容を送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。'
     : 'こんにちは、食事サポートです🍚\n食べたものや、迷っていることを文章で送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。';
   return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>食事サポート</h2><span class="aside">LINEのメニューからも開けます</span></div>
@@ -580,48 +683,76 @@ async function sendMeal(text, img) {
 }
 
 // ---------- 目標設定ワーク ----------
-function workFromMember(m) {
+function workFromMember(m, next) {
   const g = m.goal; const t = g.targets;
   const def = [['体重（kg）', '', ''], ['', '', ''], ['', '', '']];
+  const cycle = next ? curCycle() : (m.goalCycle || 1);
+  const nowOf = i => { const sr = goalSeries(i); return sr.length ? sr[sr.length - 1][1] : (t[i].start ?? ''); };
+  const tg = [0, 1, 2].map(i => t[i] ? (next ? [t[i].label, nowOf(i), ''] : [t[i].label, t[i].start ?? '', t[i].target ?? '']) : def[i]);
+  const ms = [0, 1, 2].map(() => ['', '', '', '', '', '']);
+  let has = false;
+  if (!next) [1, 2, 3, 4, 5, 6].forEach(k => { const r = monthRow(6 * (cycle - 1) + k); if (r) r.targets.forEach((v, i) => { if (v != null) { ms[i][k - 1] = String(v); has = true; } }); });
   return {
-    nay: g.needs ? g.needs.split('・').filter(Boolean) : [], top: g.top || '', why: g.why || '', ifnot: g.ifnot || '', scene: g.scene || '',
-    tg: [0, 1, 2].map(i => t[i] ? [t[i].label, t[i].start ?? '', t[i].target ?? ''] : def[i]),
+    cycle, next: !!next,
+    nay: g.needs ? g.needs.split('・').filter(Boolean) : [], top: g.top || '', why: g.why || '', ifnot: g.ifnot || '', scene: next ? '' : (g.scene || ''),
+    tg, ms, msKey: has ? JSON.stringify(tg) : '',
     when: g.when || '', plan: g.plan || '', sign: ''
   };
 }
+const tgOk = t => t[0] && t[1] !== '' && t[2] !== '' && !isNaN(Number(t[1])) && !isNaN(Number(t[2]));
+function autoMs(force) {
+  const a = S.work, key = JSON.stringify(a.tg);
+  if (!force && a.msKey === key) return;
+  a.tg.forEach((t, i) => { if (!tgOk(t)) return; const st = Number(t[1]), tg = Number(t[2]);
+    for (let k = 1; k <= 6; k++) { const r = monthRow(6 * (a.cycle - 1) + k); if (r && r.doneAt) continue; a.ms[i][k - 1] = String(k === 6 ? tg : rnd(st + (tg - st) * k / 6, t[1], t[2])); } });
+  a.msKey = key;
+}
 function vWork() {
   const s = S.ws, a = S.work, m = S.data.member;
-  if (s < 0) return `<section class="card intro"><img src="logo-full.webp" alt="Teras Lab. RESHAPE"><h2>ようこそ、${esc(m.name || '')}さん</h2><p>RESHAPEは、26週間（182日）で「なりたい自分」に届くためのプログラムです。はじめに、卒業のときに達成したい目標を一緒に決めましょう。</p><ul><li>所要時間は約10分、6つの質問に答えるだけ</li><li>決めた目標は毎日の画面にずっと表示されます</li><li>あとからいつでも編集できます</li></ul><button type="button" class="go" id="w-start">目標設定をはじめる</button></section>`;
+  const cy = a.cycle, endD = mStart() ? monthDate(6 * cy) : null;
+  if (s < 0) return a.next
+    ? `<section class="card intro"><img src="logo-full.webp" alt="Teras Lab. RESHAPE"><h2>第${cy}期の目標を決めましょう</h2><p>6ヶ月、本当におつかれさまでした。ここからの6ヶ月（${endD ? md(endD) + 'まで' : '次の6ヶ月'}）で届きたい姿と、毎月の中間目標を決めます。</p><ul><li>所要時間は約10分</li><li>「いまの値」には今の数字が入っています</li><li>毎月の見直しの日に、LINEでお知らせします</li></ul><button type="button" class="go" id="w-start">目標設定をはじめる</button>${goalSet() ? '<button type="button" class="back" id="w-cancel" style="margin-top:8px">あとで決める</button>' : ''}</section>`
+    : `<section class="card intro"><img src="logo-full.webp" alt="Teras Lab. RESHAPE"><h2>ようこそ、${esc(m.name || '')}さん</h2><p>RESHAPEは、26週間（182日）で「なりたい自分」に届くためのプログラムです。はじめに、6ヶ月後に達成したい目標と、そこへ向かう毎月の中間目標を一緒に決めましょう。</p><ul><li>所要時間は約10分、7つのステップに答えるだけ</li><li>決めた目標は毎日の画面にずっと表示されます</li><li>毎月1回、見直しの日にLINEでお知らせします</li><li>あとからいつでも編集できます</li></ul><button type="button" class="go" id="w-start">目標設定をはじめる</button></section>`;
   const q = (id, label, v, ta, ph) => `<div class="q"><label for="w-${id}">${label}</label>${ta ? `<textarea id="w-${id}" data-w="${id}" placeholder="${esc(ph || '')}">${esc(v)}</textarea>` : `<input type="text" id="w-${id}" data-w="${id}" value="${esc(v)}" placeholder="${esc(ph || '')}">`}</div>`;
   const bodies = [
     `<div class="lead">まずは今の体の状態と、一番なんとかしたいことを書き出します。</div><div class="q"><label>気になっていること<small>いくつでも</small></label><div class="opts">${NAY.map(n => `<button type="button" data-nay="${n}" aria-pressed="${a.nay.includes(n)}">${n}</button>`).join('')}</div></div>${q('top', 'その中で、一番解決したいこと', a.top, 1, '例：朝起きたときの腰のこわばりをなくしたい')}`,
     `<div class="lead">理由がはっきりしている人ほど、途中でやめません。遠慮せず本音で書いてください。</div>${q('why', 'なぜ、いま変わりたいのですか？', a.why, 1)}${q('ifnot', 'このまま何もしなかったら、1年後どうなっていそうですか？', a.ifnot, 1)}`,
-    `<div class="lead">6ヶ月後、卒業するときの自分を「場面」で思い浮かべます。誰と、どこで、何をしていますか。</div>${q('scene', '6ヶ月後の理想の場面', a.scene, 1, '例：日曜の朝、孫と公園を1時間歩いている')}`,
-    `<div class="lead">理想の場面を、測れる数字に置きかえます。この数字が<b>卒業目標</b>になり、DAY182の測定③で判定します。項目名の後ろに（単位）をつけてください。</div>
+    `<div class="lead">${cy > 1 ? '次の6ヶ月（' + (endD ? md(endD) + 'まで' : '6ヶ月後') + '）の自分' : '6ヶ月後、卒業するときの自分'}を「場面」で思い浮かべます。誰と、どこで、何をしていますか。</div>${q('scene', '6ヶ月後の理想の場面', a.scene, 1, '例：日曜の朝、孫と公園を1時間歩いている')}`,
+    `<div class="lead">理想の場面を、測れる数字に置きかえます。${cy > 1 ? 'この数字が第' + cy + '期の目標になり、' + (endD ? md(endD) : '6ヶ月後') + 'の最終見直しで確認します。' : 'この数字が<b>卒業目標</b>になり、DAY182の測定③で判定します。'}項目名の後ろに（単位）をつけてください。</div>
      ${a.tg.map((t, i) => `<div class="tgt"><span class="h full">卒業目標 ${i + 1}</span><input class="full" type="text" aria-label="卒業目標${i + 1}の項目" data-tg="${i},0" value="${esc(t[0])}" placeholder="${['体重（kg）', '朝の腰の痛み（0〜10）', '公園を休まず歩ける時間（分）'][i]}"><span class="h">いまの値</span><span class="h">6ヶ月後の目標</span><input type="text" inputmode="decimal" aria-label="卒業目標${i + 1}のいまの値" data-tg="${i},1" value="${esc(t[1])}"><input type="text" inputmode="decimal" aria-label="卒業目標${i + 1}の目標" data-tg="${i},2" value="${esc(t[2])}"></div>`).join('')}
-     <div class="hint">よい目標のコツ：①自分で測れる（体重計・0〜10の点数・時間など）②6ヶ月で届く、少しがんばる数字 ③「痛みがなくなる」ではなく「朝の痛みが2以下」のように言い切る。<br>数字は初回の面談で加藤と一緒に最終決定します。</div>`,
+     <div class="hint">よい目標のコツ：①自分で測れる（体重計・0〜10の点数・時間など）②6ヶ月で届く、少しがんばる数字 ③「痛みがなくなる」ではなく「朝の痛みが2以下」のように言い切る。${cy > 1 ? '' : '<br>数字は初回の面談で加藤と一緒に最終決定します。'}</div>`,
+    `<div class="lead">6ヶ月後の目標までを、1ヶ月ごとの小さなゴールに分けます。数字は自動で計算してあるので、無理のないように調整してください。毎月の見直しの日に、ここまで来られたかを確認します。</div>
+     ${a.tg.map((t, i) => tgOk(t) ? `<div class="ms"><div class="ms-h"><b>${esc(t[0])}</b><span class="num">いま ${esc(t[1])} → 6ヶ月後 ${esc(t[2])}</span></div><div class="ms-g">${[1, 2, 3, 4, 5, 6].map(k => { const n = 6 * (cy - 1) + k, d = mStart() ? monthDate(n) : null, done = (monthRow(n) || {}).doneAt;
+        return `<label><small>${k}ヶ月目${d ? '<br>' + md(d) : ''}</small><input type="text" inputmode="decimal" data-ms="${i},${k - 1}" value="${esc(a.ms[i][k - 1])}" ${k === 6 || done ? 'readonly' : ''} aria-label="${esc(t[0])} ${k}ヶ月目"></label>`; }).join('')}</div></div>` : '').join('')}
+     <button type="button" class="btn ghost" id="ms-auto" style="margin-top:6px">自動で計算し直す</button>
+     <div class="hint">6ヶ月目は、前のステップで決めた目標の数字です。見直しの日にうまくいかなかったら、翌月以降の数字はそこで調整できます。</div>`,
     `<div class="lead">続く人は「いつ・どこで」を先に決めています。うまくいかない日の作戦も立てておきましょう。</div>${q('when', '毎日やる時間と場所', a.when, 0, '例：朝食のあと、リビングのヨガマットで')}${q('plan', 'つまずきそうな場面と、そのときの作戦', a.plan, 1, '例：週末は時間がとれない → ストレッチ1本だけでもやって記録する')}`,
     `<div class="lead">書いた内容を確認して、名前を入れたら完了です。この内容は毎日の画面の「MY GOAL」にずっと表示されます。</div>
-     <div class="sum"><div><small>一番解決したいこと</small>${esc(a.top)}</div><div><small>6ヶ月後の理想の場面</small>${esc(a.scene)}</div><div><small>卒業目標</small>${a.tg.filter(t => t[0]).map(t => `${esc(t[0])}：${esc(t[1])} → <b>${esc(t[2])}</b>`).join('<br>')}</div><div><small>続けるための約束</small>${esc(a.when)}<br>${esc(a.plan)}</div></div>
+     <div class="sum"><div><small>一番解決したいこと</small>${esc(a.top)}</div><div><small>6ヶ月後の理想の場面</small>${esc(a.scene)}</div><div><small>${cy > 1 ? '第' + cy + '期の目標' : '卒業目標'}</small>${a.tg.filter(t => t[0]).map(t => `${esc(t[0])}：${esc(t[1])} → <b>${esc(t[2])}</b>`).join('<br>')}</div><div><small>毎月の中間目標</small>${a.tg.map((t, i) => tgOk(t) ? `${esc(nameOf(t[0]))}：${a.ms[i].map((v, k) => (k + 1) + 'ヶ月目 ' + esc(v)).join('／')}` : '').filter(Boolean).join('<br>')}</div><div><small>続けるための約束</small>${esc(a.when)}<br>${esc(a.plan)}</div></div>
      ${q('sign', '名前（宣言のサイン）', a.sign, 0)}`];
   return `<div class="steps" aria-hidden="true">${WORK_STEPS.map((_, i) => `<i class="${i <= s ? 'on' : ''}"></i>`).join('')}</div>
-  <section class="card wk-card"><div class="no">STEP ${s + 1} / 6</div><h2>${WORK_STEPS[s]}</h2>${bodies[s]}
-  <div class="wk-nav">${s > 0 ? '<button type="button" class="back" id="w-back">もどる</button>' : (goalSet() ? '<button type="button" class="back" id="w-cancel">やめる</button>' : '')}<button type="button" class="next" id="w-next" ${S.busy ? 'disabled' : ''}>${s < 5 ? '次へ' : goalSet() ? '変更を保存' : '目標を決定する'}</button></div></section>`;
+  <section class="card wk-card"><div class="no">${cy > 1 ? '第' + cy + '期・' : ''}STEP ${s + 1} / ${WORK_STEPS.length}</div><h2>${WORK_STEPS[s]}</h2>${bodies[s]}
+  <div class="wk-nav">${s > 0 ? '<button type="button" class="back" id="w-back">もどる</button>' : (goalSet() ? '<button type="button" class="back" id="w-cancel">やめる</button>' : '')}<button type="button" class="next" id="w-next" ${S.busy ? 'disabled' : ''}>${s < WORK_STEPS.length - 1 ? '次へ' : goalSet() && !a.next ? '変更を保存' : '目標を決定する'}</button></div></section>`;
 }
 function workValid(s) {
   const a = S.work;
   if (s === 2 && !a.scene.trim()) return '理想の場面を書いてください';
-  if (s === 3) { const ok = a.tg.filter(t => t[0] && t[1] !== '' && t[2] !== '' && !isNaN(Number(t[1])) && !isNaN(Number(t[2]))); if (ok.length < 1) return '卒業目標を1つ以上、数字で入れてください'; }
+  if (s === 3) { const ok = a.tg.filter(tgOk); if (ok.length < 1) return '目標を1つ以上、数字で入れてください'; }
+  if (s === 4) { const bad = a.tg.some((t, i) => tgOk(t) && a.ms[i].some(v => v === '' || isNaN(Number(v)))); if (bad) return '中間目標をすべて数字で入れてください'; }
   return '';
 }
 async function saveGoal() {
   const a = S.work;
-  const goal = { scene: a.scene, needs: a.nay.join('・'), top: a.top, why: a.why, ifnot: a.ifnot, when: a.when, plan: a.plan,
-    targets: a.tg.filter(t => t[0] && t[1] !== '' && t[2] !== '').map(t => ({ label: t[0], start: Number(t[1]), target: Number(t[2]) })) };
+  const kept = [0, 1, 2].filter(i => tgOk(a.tg[i]));
+  const milestones = [1, 2, 3, 4, 5, 6].map(k => { const n = 6 * (a.cycle - 1) + k; return { n, date: mStart() ? fmt(monthDate(n)) : '', targets: kept.map(i => Number(a.ms[i][k - 1])) }; }).filter(x => !(monthRow(x.n) || {}).doneAt);
+  const goal = { scene: a.scene, needs: a.nay.join('・'), top: a.top, why: a.why, ifnot: a.ifnot, when: a.when, plan: a.plan, cycle: a.cycle, milestones,
+    targets: kept.map(i => ({ label: a.tg[i][0], start: Number(a.tg[i][1]), target: Number(a.tg[i][2]) })) };
   S.busy = true; route();
   try {
-    await api('saveGoal', { goal });
-    const g = S.data.member.goal; Object.assign(g, goal, { setAt: fmt(S.today) });
+    const r = await api('saveGoal', { goal });
+    if (r.months) S.data.months = r.months;
+    S.data.member.goalCycle = a.cycle;
+    const g = S.data.member.goal; Object.assign(g, { scene: goal.scene, needs: goal.needs, top: goal.top, why: goal.why, ifnot: goal.ifnot, when: goal.when, plan: goal.plan, targets: goal.targets }, { setAt: fmt(S.today) });
     S.goalLink = g.targets.map(t => matchField(t.label));
     S.form.g = g.targets.map(() => '');
     S.forceWork = false; S.ws = -1; S.view = 'today'; toast('目標を保存しました');
@@ -681,10 +812,13 @@ document.addEventListener('click', async e => {
   if (t.id === 'save') { if (S.mode === 'grad') { S.P = { train: [], D: null }; } saveDay(); return; }
   if (t.id === 'toast-close') { document.querySelector('.toast')?.remove(); return; }
   if (t.id === 'goal-start' || t.id === 'goal-edit') { S.work = workFromMember(S.data.member); S.forceWork = true; S.ws = goalSet() ? 0 : -1; route(); scrollTo(0, 0); return; }
+  if (t.id === 'goal-next') { S.work = workFromMember(S.data.member, true); S.forceWork = true; S.ws = -1; route(); scrollTo(0, 0); return; }
+  if (t.id === 'ms-auto') { autoMs(true); route(); return; }
+  if (t.id === 'rv-save') { saveReview(); return; }
   if (t.id === 'w-start') { S.ws = 0; route(); scrollTo(0, 0); return; }
   if (t.id === 'w-back') { S.ws--; route(); scrollTo(0, 0); return; }
   if (t.id === 'w-cancel') { S.forceWork = false; S.ws = -1; route(); scrollTo(0, 0); return; }
-  if (t.id === 'w-next') { const err = workValid(S.ws); if (err) { toast(err); return; } if (S.ws < 5) { S.ws++; route(); scrollTo(0, 0); } else saveGoal(); return; }
+  if (t.id === 'w-next') { const err = workValid(S.ws); if (err) { toast(err); return; } if (S.ws < WORK_STEPS.length - 1) { S.ws++; if (S.ws === 4) autoMs(false); route(); scrollTo(0, 0); } else saveGoal(); return; }
 });
 document.addEventListener('input', e => {
   const el = e.target;
@@ -693,6 +827,10 @@ document.addEventListener('input', e => {
   if (el.id === 'f-note') S.form.note = el.value;
   if (el.dataset.w) S.work[el.dataset.w] = el.value;
   if (el.dataset.tg) { const [i, j] = el.dataset.tg.split(','); S.work.tg[i][j] = el.value; }
+  if (el.dataset.ms) { const [i, k] = el.dataset.ms.split(','); S.work.ms[i][k] = el.value; }
+  if (el.dataset.rva !== undefined) { S.rv.actual[+el.dataset.rva] = el.value; const o = document.getElementById('rvp-' + el.dataset.rva); if (o) o.innerHTML = rvPill(+el.dataset.rva); }
+  if (el.dataset.rvn !== undefined) S.rv.nt[+el.dataset.rvn] = el.value;
+  if (el.dataset.rvt) S.rv[el.dataset.rvt] = el.value;
 });
 document.addEventListener('change', async e => {
   const el = e.target;

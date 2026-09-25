@@ -9,6 +9,7 @@
  *   ADMIN_KEY         … 管理者ページの合言葉（加藤さんが自分で決める）
  *   ANTHROPIC_API_KEY … 食事サポートに使うAIのキー（加藤さんが自分で入力）
  *   PHOTO_FOLDER_ID   … setup で自動作成（姿勢写真の保存先フォルダ）
+ *   LINE_MESSAGING_TOKEN … 公式LINE（Messaging API）の長期チャネルアクセストークン（毎月の見直しリマインド用）
  */
 
 const TZ = 'Asia/Tokyo';
@@ -16,10 +17,12 @@ const SOURCE_180DAY_ID = '1jRhfGPH2k3RBxXAUSmE5n5QETlXbu_eAlw9JUzHtkXM'; // 180�
 const SOURCE_180DAY_GID = 1146111468;
 const MEAL_MODEL = 'claude-haiku-4-5-20251001';
 const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // 運営用スプレッドシート Teras_Lab_RESHAPE
+const LIFF_URL = 'https://liff.line.me/2011731827-ZLDHlKTg';
+const MONTH_HEAD = ['会員ID', '名前', '期', '月', '見直し日', '目標1 中間', '目標2 中間', '目標3 中間', '目標1 実績', '目標2 実績', '目標3 実績', '達成数', 'うまくいったこと', 'うまくいかなかったこと', '来月の工夫', '記入日', 'LINE通知日'];
 
 const SH = {
   member: '会員', record: '毎日の記録', photo: '姿勢写真', meal: '食事',
-  video: '動画マスター', lecture: '講義マスター', roadmap: '26週ロードマップ', daily: '毎日のストレッチ'
+  video: '動画マスター', lecture: '講義マスター', roadmap: '26週ロードマップ', daily: '毎日のストレッチ', month: '月の目標'
 };
 
 // ============ 入口 ============
@@ -38,6 +41,7 @@ function doPost(e) {
     if (a === 'boot') return json_(boot_(me, req));
     if (a === 'saveDay') return json_(saveDay_(me, req));
     if (a === 'saveGoal') return json_(saveGoal_(me, req));
+    if (a === 'saveReview') return json_(saveReview_(me, req));
     if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
     if (a === 'getPhoto') return json_(getPhoto_(me, req));
     if (a === 'meal') return json_(meal_(me, req));
@@ -92,6 +96,7 @@ function boot_(me, req) {
     member: memberOut_(m),
     records: table_(SH.record).rows.filter(r => String(r['会員ID']) === me.id).map(recordOut_),
     photos: table_(SH.photo).rows.filter(r => String(r['会員ID']) === me.id).map(photoOut_),
+    months: monthsOf_(me.id),
     content: content_()
   };
 }
@@ -115,8 +120,22 @@ function memberOut_(r) {
       when: String(r['やる時間・場所'] || ''), plan: String(r['つまずき対策'] || ''), setAt: fmtDate_(r['目標設定日']),
       targets: goals
     },
-    fields: String(r['毎日の記録項目'] || '')
+    fields: String(r['毎日の記録項目'] || ''),
+    goalCycle: num_(r['目標の期']) || (goals.length ? 1 : 0)
   };
+}
+
+function monthOut_(r) {
+  return {
+    n: num_(r['月']), cycle: num_(r['期']), date: fmtDate_(r['見直し日']),
+    targets: [num_(r['目標1 中間']), num_(r['目標2 中間']), num_(r['目標3 中間'])],
+    actual: [num_(r['目標1 実績']), num_(r['目標2 実績']), num_(r['目標3 実績'])],
+    hit: num_(r['達成数']), good: String(r['うまくいったこと'] || ''), bad: String(r['うまくいかなかったこと'] || ''),
+    next: String(r['来月の工夫'] || ''), doneAt: fmtDate_(r['記入日'])
+  };
+}
+function monthsOf_(id) {
+  return table_(SH.month).rows.filter(r => String(r['会員ID']) === id && num_(r['月'])).map(monthOut_).sort((a, b) => a.n - b.n);
 }
 
 function recordOut_(r) {
@@ -211,16 +230,112 @@ function saveGoal_(me, req) {
   const upd = {
     '6ヶ月後の理想の場面（MY GOAL）': g.scene || '', 'お悩み': g.needs || '', '一番解決したいこと': g.top || '',
     '変わりたい理由': g.why || '', 'このままだと1年後': g.ifnot || '', 'やる時間・場所': g.when || '', 'つまずき対策': g.plan || '',
-    '目標設定日': fmtDate_(new Date())
+    '目標設定日': fmtDate_(new Date()), '目標の期': Number(g.cycle) || 1
   };
   for (let i = 0; i < 3; i++) {
     upd['卒業目標' + (i + 1)] = t[i] ? t[i].label : '';
     upd['目標' + (i + 1) + ' スタート'] = t[i] ? t[i].start : '';
     upd['目標' + (i + 1) + ' 目標値'] = t[i] ? t[i].target : '';
   }
+  ensureHeaders_(SH.member, ['目標の期']);
   const ok = updateMember_(me.id, upd);
   if (!ok) throw new Error('member_not_found');
-  return { ok: true };
+  // 毎月の中間目標
+  const ms = Array.isArray(g.milestones) ? g.milestones : [];
+  if (ms.length) {
+    ensureHeaders_(SH.month, MONTH_HEAD);
+    const m = findMember_(me.id);
+    ms.forEach(x => {
+      const n = Number(x.n); if (!n) return;
+      const row = { '会員ID': me.id, '名前': m ? m['名前'] : '', '期': Number(g.cycle) || 1, '月': n, '見直し日': x.date || '' };
+      for (let i = 0; i < 3; i++) row['目標' + (i + 1) + ' 中間'] = val_(x.targets, i);
+      upsert_(SH.month, r => String(r['会員ID']) === me.id && Number(r['月']) === n && !r['記入日'], row);
+    });
+  }
+  return { ok: true, months: monthsOf_(me.id) };
+}
+
+function saveReview_(me, req) {
+  const v = req.review || {};
+  const n = Number(v.n); if (!n) throw new Error('bad_month');
+  ensureHeaders_(SH.month, MONTH_HEAD);
+  const m = findMember_(me.id);
+  const row = {
+    '会員ID': me.id, '名前': m ? m['名前'] : '', '期': Number(v.cycle) || Math.ceil(n / 6), '月': n, '見直し日': v.date || '',
+    '達成数': v.hit != null ? Number(v.hit) : '',
+    'うまくいったこと': String(v.good || '').slice(0, 1000), 'うまくいかなかったこと': String(v.bad || '').slice(0, 1000),
+    '来月の工夫': String(v.next || '').slice(0, 1000), '記入日': fmtDate_(new Date())
+  };
+  for (let i = 0; i < 3; i++) {
+    row['目標' + (i + 1) + ' 実績'] = val_(v.actual, i);
+    if (v.targets && v.targets[i] != null && v.targets[i] !== '') row['目標' + (i + 1) + ' 中間'] = Number(v.targets[i]);
+  }
+  upsert_(SH.month, r => String(r['会員ID']) === me.id && Number(r['月']) === n, row);
+  if (Array.isArray(v.nextTargets) && n % 6 !== 0) {
+    const nx = { '会員ID': me.id, '名前': row['名前'], '期': row['期'], '月': n + 1, '見直し日': v.nextDate || '' };
+    for (let i = 0; i < 3; i++) nx['目標' + (i + 1) + ' 中間'] = val_(v.nextTargets, i);
+    upsert_(SH.month, r => String(r['会員ID']) === me.id && Number(r['月']) === n + 1 && !r['記入日'], nx);
+  }
+  return { ok: true, months: monthsOf_(me.id) };
+}
+
+// ============ 毎月の見直しリマインド（毎朝9時に自動実行） ============
+function ymd_(d) { return d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2); }
+function parseYmd_(s) { const m = String(s || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+function addMonths_(d, n) { const x = new Date(d.getTime()); x.setMonth(x.getMonth() + n); return x; }
+
+function monthlyReminder() {
+  const token = prop_('LINE_MESSAGING_TOKEN');
+  if (!token) { Logger.log('LINE_MESSAGING_TOKEN が未設定のため送信しません'); return; }
+  ensureHeaders_(SH.month, MONTH_HEAD);
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
+  const weekAgo = Utilities.formatDate(new Date(Date.now() - 7 * 864e5), TZ, 'yyyy/MM/dd');
+  const months = table_(SH.month).rows;
+  let sent = 0;
+  table_(SH.member).rows.forEach(r => {
+    const id = String(r['会員ID'] || '');
+    if (!id || /^SAMPLE-/.test(id) || !/^(利用中|卒業生)$/.test(String(r['利用'] || ''))) return;
+    const st = parseYmd_(fmtDate_(r['開始日（DAY1）'])); if (!st) return;
+    let n = 0; while (n < 120 && ymd_(addMonths_(st, n + 1)) <= today) n++;
+    if (n < 1) return;
+    const date = ymd_(addMonths_(st, n));
+    if (date < weekAgo) return; // 1週間以上前の見直しは送らない
+    const row = months.find(x => String(x['会員ID']) === id && Number(x['月']) === n);
+    if (row && (row['記入日'] || row['LINE通知日'])) return;
+    const name = String(r['名前'] || '');
+    const k = ((n - 1) % 6) + 1, c = Math.ceil(n / 6);
+    const text = n % 6 === 0
+      ? name + 'さん、第' + c + '期の6ヶ月が経ちました。\n\n今日は「最終見直し」の日です。6ヶ月前に決めた目標をふり返って、次の6ヶ月の目標と、毎月の中間目標を決めましょう（約10分）。\n\n▼ 見直しをはじめる\n' + LIFF_URL + '?v=review'
+      : name + 'さん、' + k + 'ヶ月目の見直しの日です。\n\n今の数字を入れて、中間目標にどこまで近づいたか確認しましょう。うまくいったこと・来月の工夫もひとことずつ（約3分）。\n\n▼ 見直しをはじめる\n' + LIFF_URL + '?v=review';
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: id, messages: [{ type: 'text', text: text }] })
+    });
+    if (res.getResponseCode() === 200) {
+      sent++;
+      upsert_(SH.month, x => String(x['会員ID']) === id && Number(x['月']) === n, { '会員ID': id, '名前': name, '期': c, '月': n, '見直し日': date, 'LINE通知日': today });
+    } else {
+      Logger.log('送信失敗 ' + name + '：' + res.getResponseCode() + ' ' + res.getContentText());
+    }
+  });
+  Logger.log('毎月の見直しリマインド：' + sent + '件送信');
+}
+
+/** 動作確認用：会員シートの「メモ」に「テスト送信」と書いた人にだけ、見直しの案内を送る */
+function testPush() {
+  const token = prop_('LINE_MESSAGING_TOKEN');
+  if (!token) { Logger.log('LINE_MESSAGING_TOKEN が未設定です'); return; }
+  const targets = table_(SH.member).rows.filter(r => /テスト送信/.test(String(r['メモ'] || '')) && r['会員ID']);
+  if (!targets.length) { Logger.log('メモに「テスト送信」と書いた会員がいません'); return; }
+  targets.forEach(r => {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: String(r['会員ID']), messages: [{ type: 'text', text: '【テスト】' + (r['名前'] || '') + 'さん、1ヶ月目の見直しの日です。\n\n▼ 見直しをはじめる\n' + LIFF_URL + '?v=review' }] })
+    });
+    Logger.log((r['名前'] || '') + '：' + res.getResponseCode() + ' ' + res.getContentText());
+  });
 }
 
 function uploadPhoto_(me, req) {
@@ -264,7 +379,7 @@ function meal_(me, req) {
   const key = prop_('ANTHROPIC_API_KEY');
   const m = findMember_(me.id);
   const text = String(req.text || '').slice(0, 800);
-  const img = String(req.image || '');
+  const img = m && String(m['プラン'] || '') === 'VIP' ? String(req.image || '') : ''; // 写真はVIPだけ
   let reply;
   if (!key) {
     reply = '（食事サポートの準備中です。もうしばらくお待ちください）';
@@ -312,13 +427,14 @@ function checkAdmin_(req) {
 
 function adminData_(req) {
   checkAdmin_(req);
-  const recs = table_(SH.record).rows, photos = table_(SH.photo).rows;
+  const recs = table_(SH.record).rows, photos = table_(SH.photo).rows, monthRows = table_(SH.month).rows;
   const today = fmtDate_(new Date());
   const members = table_(SH.member).rows.filter(r => r['会員ID']).map(r => {
     const m = memberOut_(r);
     const mine = recs.filter(x => String(x['会員ID']) === m.id).map(recordOut_);
     const ph = photos.filter(x => String(x['会員ID']) === m.id).map(photoOut_);
-    return { member: m, records: mine.slice(-60), photos: ph };
+    const mo = monthRows.filter(x => String(x['会員ID']) === m.id && num_(x['月'])).map(monthOut_).sort((a, b) => a.n - b.n);
+    return { member: m, records: mine.slice(-60), photos: ph, months: mo };
   });
   return { ok: true, today: today, members: members, sheetUrl: ss_().getUrl() };
 }
@@ -332,7 +448,7 @@ function adminPhoto_(req) {
 function setup() {
   const ss = ss_();
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '：' + e.message); } };
-  step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
+  step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('見出しの追加', () => {
     ensureHeaders_(SH.record, ['日付', '会員ID', '名前', 'DAY', '週', 'ストレッチ①', 'ストレッチ②', 'トレーニング', '見た動画', '鏡チェック', '記録1', '記録2', '記録3', 'ひとこと', '保存日時', '目標1 いま', '目標2 いま', '目標3 いま']);
     ensureHeaders_(SH.photo, ['撮影日', '会員ID', '名前', 'DAY', 'タイミング', '正面の写真', '横向きの写真', '担当コメント']);
@@ -358,6 +474,10 @@ function setup() {
     dst.setFrozenRows(1);
   });
   step('写真フォルダ', () => photoRoot_());
+  step('月の目標シート', () => { ensureHeaders_(SH.month, MONTH_HEAD); ensureHeaders_(SH.member, ['目標の期']); const s = ss.getSheetByName(SH.month); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
+  step('毎月の見直しリマインド（毎朝9時）', () => {
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'monthlyReminder')) ScriptApp.newTrigger('monthlyReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
+  });
   CacheService.getScriptCache().removeAll(['c0', 'c1', 'c2', 'c3', 'cn']);
   Logger.log('setup 完了');
 }
