@@ -120,11 +120,11 @@ const curCycle = () => Math.floor(monthsPassed() / 6) + 1;
 const goalCyc = () => S.data.member.goalCycle || (goalSet() ? 1 : 0);
 const monthRow = n => S.data.months.find(x => x.n === n);
 const decOf = v => { const m = String(v ?? '').match(/\.(\d+)/); return m ? m[1].length : 0; };
-function rnd(v, a, b) { let d = Math.max(decOf(a), decOf(b)); if (!d && Math.abs(b - a) < 6) d = 1; return +v.toFixed(Math.min(d, 1)); }
+function rnd(v, a, b, label) { if (/10/.test(unitOf(label || ''))) return Math.round(v); let d = Math.max(decOf(a), decOf(b)); if (!d && Math.abs(b - a) < 6) d = 1; return +v.toFixed(Math.min(d, 1)); }
 function msTarget(i, n) {
   const r = monthRow(n); if (r && r.targets[i] != null) return r.targets[i];
   const t = S.data.member.goal.targets[i]; if (!t || t.start == null || t.target == null) return null;
-  return rnd(t.start + (t.target - t.start) * kOf(n) / 6, t.start, t.target);
+  return rnd(t.start + (t.target - t.start) * kOf(n) / 6, t.start, t.target, t.label);
 }
 function hitOf(t, now, target) { if (now == null || target == null || t.start == null || t.target == null) return false; return t.target < t.start ? now <= target : now >= target; }
 function reviewDue() { if (!goalSet() || !mStart()) return null; const p = monthsPassed(); if (p < 1 || p > 6 * goalCyc()) return null; const r = monthRow(p); return r && r.doneAt ? null : p; }
@@ -172,7 +172,7 @@ function vReview() {
   }
   const nx = nextReview();
   const hist = S.data.months.filter(x => x.doneAt).sort((a, b) => b.n - a.n);
-  return `${back}${top}${reviewCard()}
+  return `${back}${top}${needNewGoals() ? reviewCard() : ''}
   <section class="sec"><div class="sec-h"><h2>中間目標の進み具合</h2><span class="aside">${nx && !due ? '次の見直し ' + md(monthDate(nx)) + '（あと' + dayDiff(monthDate(nx), S.today) + '日）' : '第' + c + '期'}</span></div>
   <div class="card">${progressBlock() || '<p style="padding:14px;color:var(--muted);font-size:13px">目標を決めると表示されます。</p>'}</div></section>
   ${hist.length ? `<section class="sec"><div class="sec-h"><h2>これまでのふり返り</h2></div><div class="card">${hist.map(x => `<div class="rv-hist"><div class="rv-hh"><b>第${cycOf(x.n)}期 ${kOf(x.n)}ヶ月目</b><span class="num">${esc(x.doneAt)}・達成 ${x.hit ?? '—'}</span></div>${x.good ? `<p><small>うまくいったこと</small>${esc(x.good)}</p>` : ''}${x.bad ? `<p><small>うまくいかなかったこと</small>${esc(x.bad)}</p>` : ''}${x.next ? `<p><small>次の工夫</small>${esc(x.next)}</p>` : ''}</div>`).join('')}</div></section>` : ''}`;
@@ -429,7 +429,7 @@ function vGrad() {
   const st = parseD(S.data.member.start), since = st ? Math.max(0, S.day - 182) : 0;
   const D = dailyOf(S.day);
   const items = D ? [['s1', D[3]], ['s2', D[4]]].map(([k, c]) => C().stretch[c] ? { k, code: c, t: C().stretch[c][0], link: C().stretch[c][1], s: 'ストレッチ' } : null).filter(Boolean) : [];
-  return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">${S.data.member.status === '卒業生' ? 'RESHAPE 卒業生' : 'RESHAPE 第' + curCycle() + '期'}</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span><span class="chip">卒業目標 ${n}/${res.length} 達成</span><span class="chip">卒業生コミュニティ</span></div></div>${spine(1)}</div></section>
+  return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">${S.data.member.status === '卒業生' ? 'RESHAPE 卒業生' : 'RESHAPE 第' + curCycle() + '期'}</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span>${goalCyc() > 1 ? `<span class="chip">第${goalCyc()}期の目標に挑戦中</span>` : `<span class="chip">卒業目標 ${n}/${res.length} 達成</span>`}${S.data.member.status === '卒業生' ? '<span class="chip">卒業生コミュニティ</span>' : ''}</div></div>${spine(1)}</div></section>
   ${reviewCard()}${goalCard()}
   <div class="meter"><div class="dots">${[1, 2, 3].map(i => `<span class="${i <= Math.min(3, recThisCalWeek()) ? 'on' : ''}">${i <= recThisCalWeek() ? '✓' : i}</span>`).join('')}</div><div><b>今週 ${recThisCalWeek()}日</b><p>卒業後も、週3日を目安に続けましょう</p></div></div>
   <section class="sec"><div class="sec-h"><h2>今日のストレッチ</h2></div><div class="card">${items.map(row).join('')}<div class="note">困ったときは「道のり」の辞書から選べます。</div></div></section>
@@ -704,7 +704,7 @@ function autoMs(force) {
   const a = S.work, key = JSON.stringify(a.tg);
   if (!force && a.msKey === key) return;
   a.tg.forEach((t, i) => { if (!tgOk(t)) return; const st = Number(t[1]), tg = Number(t[2]);
-    for (let k = 1; k <= 6; k++) { const r = monthRow(6 * (a.cycle - 1) + k); if (r && r.doneAt) continue; a.ms[i][k - 1] = String(k === 6 ? tg : rnd(st + (tg - st) * k / 6, t[1], t[2])); } });
+    for (let k = 1; k <= 6; k++) { const r = monthRow(6 * (a.cycle - 1) + k); if (r && r.doneAt) continue; a.ms[i][k - 1] = String(k === 6 ? tg : rnd(st + (tg - st) * k / 6, t[1], t[2], t[0])); } });
   a.msKey = key;
 }
 function vWork() {

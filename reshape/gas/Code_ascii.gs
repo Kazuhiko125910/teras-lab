@@ -9,6 +9,7 @@
  *   ADMIN_KEY         \u2026 \u7ba1\u7406\u8005\u30da\u30fc\u30b8\u306e\u5408\u8a00\u8449\uff08\u52a0\u85e4\u3055\u3093\u304c\u81ea\u5206\u3067\u6c7a\u3081\u308b\uff09
  *   ANTHROPIC_API_KEY \u2026 \u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u306b\u4f7f\u3046AI\u306e\u30ad\u30fc\uff08\u52a0\u85e4\u3055\u3093\u304c\u81ea\u5206\u3067\u5165\u529b\uff09
  *   PHOTO_FOLDER_ID   \u2026 setup \u3067\u81ea\u52d5\u4f5c\u6210\uff08\u59ff\u52e2\u5199\u771f\u306e\u4fdd\u5b58\u5148\u30d5\u30a9\u30eb\u30c0\uff09
+ *   LINE_MESSAGING_TOKEN \u2026 \u516c\u5f0fLINE\uff08Messaging API\uff09\u306e\u9577\u671f\u30c1\u30e3\u30cd\u30eb\u30a2\u30af\u30bb\u30b9\u30c8\u30fc\u30af\u30f3\uff08\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\u7528\uff09
  */
 
 const TZ = 'Asia/Tokyo';
@@ -16,10 +17,12 @@ const SOURCE_180DAY_ID = '1jRhfGPH2k3RBxXAUSmE5n5QETlXbu_eAlw9JUzHtkXM'; // 180\
 const SOURCE_180DAY_GID = 1146111468;
 const MEAL_MODEL = 'claude-haiku-4-5-20251001';
 const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // \u904b\u55b6\u7528\u30b9\u30d7\u30ec\u30c3\u30c9\u30b7\u30fc\u30c8 Teras_Lab_RESHAPE
+const LIFF_URL = 'https://liff.line.me/2011731827-ZLDHlKTg';
+const MONTH_HEAD = ['\u4f1a\u54e1ID', '\u540d\u524d', '\u671f', '\u6708', '\u898b\u76f4\u3057\u65e5', '\u76ee\u6a191 \u4e2d\u9593', '\u76ee\u6a192 \u4e2d\u9593', '\u76ee\u6a193 \u4e2d\u9593', '\u76ee\u6a191 \u5b9f\u7e3e', '\u76ee\u6a192 \u5b9f\u7e3e', '\u76ee\u6a193 \u5b9f\u7e3e', '\u9054\u6210\u6570', '\u3046\u307e\u304f\u3044\u3063\u305f\u3053\u3068', '\u3046\u307e\u304f\u3044\u304b\u306a\u304b\u3063\u305f\u3053\u3068', '\u6765\u6708\u306e\u5de5\u592b', '\u8a18\u5165\u65e5', 'LINE\u901a\u77e5\u65e5'];
 
 const SH = {
   member: '\u4f1a\u54e1', record: '\u6bce\u65e5\u306e\u8a18\u9332', photo: '\u59ff\u52e2\u5199\u771f', meal: '\u98df\u4e8b',
-  video: '\u52d5\u753b\u30de\u30b9\u30bf\u30fc', lecture: '\u8b1b\u7fa9\u30de\u30b9\u30bf\u30fc', roadmap: '26\u9031\u30ed\u30fc\u30c9\u30de\u30c3\u30d7', daily: '\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1'
+  video: '\u52d5\u753b\u30de\u30b9\u30bf\u30fc', lecture: '\u8b1b\u7fa9\u30de\u30b9\u30bf\u30fc', roadmap: '26\u9031\u30ed\u30fc\u30c9\u30de\u30c3\u30d7', daily: '\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1', month: '\u6708\u306e\u76ee\u6a19'
 };
 
 // ============ \u5165\u53e3 ============
@@ -38,6 +41,7 @@ function doPost(e) {
     if (a === 'boot') return json_(boot_(me, req));
     if (a === 'saveDay') return json_(saveDay_(me, req));
     if (a === 'saveGoal') return json_(saveGoal_(me, req));
+    if (a === 'saveReview') return json_(saveReview_(me, req));
     if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
     if (a === 'getPhoto') return json_(getPhoto_(me, req));
     if (a === 'meal') return json_(meal_(me, req));
@@ -92,6 +96,7 @@ function boot_(me, req) {
     member: memberOut_(m),
     records: table_(SH.record).rows.filter(r => String(r['\u4f1a\u54e1ID']) === me.id).map(recordOut_),
     photos: table_(SH.photo).rows.filter(r => String(r['\u4f1a\u54e1ID']) === me.id).map(photoOut_),
+    months: monthsOf_(me.id),
     content: content_()
   };
 }
@@ -115,8 +120,22 @@ function memberOut_(r) {
       when: String(r['\u3084\u308b\u6642\u9593\u30fb\u5834\u6240'] || ''), plan: String(r['\u3064\u307e\u305a\u304d\u5bfe\u7b56'] || ''), setAt: fmtDate_(r['\u76ee\u6a19\u8a2d\u5b9a\u65e5']),
       targets: goals
     },
-    fields: String(r['\u6bce\u65e5\u306e\u8a18\u9332\u9805\u76ee'] || '')
+    fields: String(r['\u6bce\u65e5\u306e\u8a18\u9332\u9805\u76ee'] || ''),
+    goalCycle: num_(r['\u76ee\u6a19\u306e\u671f']) || (goals.length ? 1 : 0)
   };
+}
+
+function monthOut_(r) {
+  return {
+    n: num_(r['\u6708']), cycle: num_(r['\u671f']), date: fmtDate_(r['\u898b\u76f4\u3057\u65e5']),
+    targets: [num_(r['\u76ee\u6a191 \u4e2d\u9593']), num_(r['\u76ee\u6a192 \u4e2d\u9593']), num_(r['\u76ee\u6a193 \u4e2d\u9593'])],
+    actual: [num_(r['\u76ee\u6a191 \u5b9f\u7e3e']), num_(r['\u76ee\u6a192 \u5b9f\u7e3e']), num_(r['\u76ee\u6a193 \u5b9f\u7e3e'])],
+    hit: num_(r['\u9054\u6210\u6570']), good: String(r['\u3046\u307e\u304f\u3044\u3063\u305f\u3053\u3068'] || ''), bad: String(r['\u3046\u307e\u304f\u3044\u304b\u306a\u304b\u3063\u305f\u3053\u3068'] || ''),
+    next: String(r['\u6765\u6708\u306e\u5de5\u592b'] || ''), doneAt: fmtDate_(r['\u8a18\u5165\u65e5'])
+  };
+}
+function monthsOf_(id) {
+  return table_(SH.month).rows.filter(r => String(r['\u4f1a\u54e1ID']) === id && num_(r['\u6708'])).map(monthOut_).sort((a, b) => a.n - b.n);
 }
 
 function recordOut_(r) {
@@ -211,16 +230,112 @@ function saveGoal_(me, req) {
   const upd = {
     '6\u30f6\u6708\u5f8c\u306e\u7406\u60f3\u306e\u5834\u9762\uff08MY GOAL\uff09': g.scene || '', '\u304a\u60a9\u307f': g.needs || '', '\u4e00\u756a\u89e3\u6c7a\u3057\u305f\u3044\u3053\u3068': g.top || '',
     '\u5909\u308f\u308a\u305f\u3044\u7406\u7531': g.why || '', '\u3053\u306e\u307e\u307e\u3060\u30681\u5e74\u5f8c': g.ifnot || '', '\u3084\u308b\u6642\u9593\u30fb\u5834\u6240': g.when || '', '\u3064\u307e\u305a\u304d\u5bfe\u7b56': g.plan || '',
-    '\u76ee\u6a19\u8a2d\u5b9a\u65e5': fmtDate_(new Date())
+    '\u76ee\u6a19\u8a2d\u5b9a\u65e5': fmtDate_(new Date()), '\u76ee\u6a19\u306e\u671f': Number(g.cycle) || 1
   };
   for (let i = 0; i < 3; i++) {
     upd['\u5352\u696d\u76ee\u6a19' + (i + 1)] = t[i] ? t[i].label : '';
     upd['\u76ee\u6a19' + (i + 1) + ' \u30b9\u30bf\u30fc\u30c8'] = t[i] ? t[i].start : '';
     upd['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024'] = t[i] ? t[i].target : '';
   }
+  ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f']);
   const ok = updateMember_(me.id, upd);
   if (!ok) throw new Error('member_not_found');
-  return { ok: true };
+  // \u6bce\u6708\u306e\u4e2d\u9593\u76ee\u6a19
+  const ms = Array.isArray(g.milestones) ? g.milestones : [];
+  if (ms.length) {
+    ensureHeaders_(SH.month, MONTH_HEAD);
+    const m = findMember_(me.id);
+    ms.forEach(x => {
+      const n = Number(x.n); if (!n) return;
+      const row = { '\u4f1a\u54e1ID': me.id, '\u540d\u524d': m ? m['\u540d\u524d'] : '', '\u671f': Number(g.cycle) || 1, '\u6708': n, '\u898b\u76f4\u3057\u65e5': x.date || '' };
+      for (let i = 0; i < 3; i++) row['\u76ee\u6a19' + (i + 1) + ' \u4e2d\u9593'] = val_(x.targets, i);
+      upsert_(SH.month, r => String(r['\u4f1a\u54e1ID']) === me.id && Number(r['\u6708']) === n && !r['\u8a18\u5165\u65e5'], row);
+    });
+  }
+  return { ok: true, months: monthsOf_(me.id) };
+}
+
+function saveReview_(me, req) {
+  const v = req.review || {};
+  const n = Number(v.n); if (!n) throw new Error('bad_month');
+  ensureHeaders_(SH.month, MONTH_HEAD);
+  const m = findMember_(me.id);
+  const row = {
+    '\u4f1a\u54e1ID': me.id, '\u540d\u524d': m ? m['\u540d\u524d'] : '', '\u671f': Number(v.cycle) || Math.ceil(n / 6), '\u6708': n, '\u898b\u76f4\u3057\u65e5': v.date || '',
+    '\u9054\u6210\u6570': v.hit != null ? Number(v.hit) : '',
+    '\u3046\u307e\u304f\u3044\u3063\u305f\u3053\u3068': String(v.good || '').slice(0, 1000), '\u3046\u307e\u304f\u3044\u304b\u306a\u304b\u3063\u305f\u3053\u3068': String(v.bad || '').slice(0, 1000),
+    '\u6765\u6708\u306e\u5de5\u592b': String(v.next || '').slice(0, 1000), '\u8a18\u5165\u65e5': fmtDate_(new Date())
+  };
+  for (let i = 0; i < 3; i++) {
+    row['\u76ee\u6a19' + (i + 1) + ' \u5b9f\u7e3e'] = val_(v.actual, i);
+    if (v.targets && v.targets[i] != null && v.targets[i] !== '') row['\u76ee\u6a19' + (i + 1) + ' \u4e2d\u9593'] = Number(v.targets[i]);
+  }
+  upsert_(SH.month, r => String(r['\u4f1a\u54e1ID']) === me.id && Number(r['\u6708']) === n, row);
+  if (Array.isArray(v.nextTargets) && n % 6 !== 0) {
+    const nx = { '\u4f1a\u54e1ID': me.id, '\u540d\u524d': row['\u540d\u524d'], '\u671f': row['\u671f'], '\u6708': n + 1, '\u898b\u76f4\u3057\u65e5': v.nextDate || '' };
+    for (let i = 0; i < 3; i++) nx['\u76ee\u6a19' + (i + 1) + ' \u4e2d\u9593'] = val_(v.nextTargets, i);
+    upsert_(SH.month, r => String(r['\u4f1a\u54e1ID']) === me.id && Number(r['\u6708']) === n + 1 && !r['\u8a18\u5165\u65e5'], nx);
+  }
+  return { ok: true, months: monthsOf_(me.id) };
+}
+
+// ============ \u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff08\u6bce\u671d9\u6642\u306b\u81ea\u52d5\u5b9f\u884c\uff09 ============
+function ymd_(d) { return d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2); }
+function parseYmd_(s) { const m = String(s || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+function addMonths_(d, n) { const x = new Date(d.getTime()); x.setMonth(x.getMonth() + n); return x; }
+
+function monthlyReminder() {
+  const token = prop_('LINE_MESSAGING_TOKEN');
+  if (!token) { Logger.log('LINE_MESSAGING_TOKEN \u304c\u672a\u8a2d\u5b9a\u306e\u305f\u3081\u9001\u4fe1\u3057\u307e\u305b\u3093'); return; }
+  ensureHeaders_(SH.month, MONTH_HEAD);
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
+  const weekAgo = Utilities.formatDate(new Date(Date.now() - 7 * 864e5), TZ, 'yyyy/MM/dd');
+  const months = table_(SH.month).rows;
+  let sent = 0;
+  table_(SH.member).rows.forEach(r => {
+    const id = String(r['\u4f1a\u54e1ID'] || '');
+    if (!id || /^SAMPLE-/.test(id) || !/^(\u5229\u7528\u4e2d|\u5352\u696d\u751f)$/.test(String(r['\u5229\u7528'] || ''))) return;
+    const st = parseYmd_(fmtDate_(r['\u958b\u59cb\u65e5\uff08DAY1\uff09'])); if (!st) return;
+    let n = 0; while (n < 120 && ymd_(addMonths_(st, n + 1)) <= today) n++;
+    if (n < 1) return;
+    const date = ymd_(addMonths_(st, n));
+    if (date < weekAgo) return; // 1\u9031\u9593\u4ee5\u4e0a\u524d\u306e\u898b\u76f4\u3057\u306f\u9001\u3089\u306a\u3044
+    const row = months.find(x => String(x['\u4f1a\u54e1ID']) === id && Number(x['\u6708']) === n);
+    if (row && (row['\u8a18\u5165\u65e5'] || row['LINE\u901a\u77e5\u65e5'])) return;
+    const name = String(r['\u540d\u524d'] || '');
+    const k = ((n - 1) % 6) + 1, c = Math.ceil(n / 6);
+    const text = n % 6 === 0
+      ? name + '\u3055\u3093\u3001\u7b2c' + c + '\u671f\u306e6\u30f6\u6708\u304c\u7d4c\u3061\u307e\u3057\u305f\u3002\n\n\u4eca\u65e5\u306f\u300c\u6700\u7d42\u898b\u76f4\u3057\u300d\u306e\u65e5\u3067\u3059\u30026\u30f6\u6708\u524d\u306b\u6c7a\u3081\u305f\u76ee\u6a19\u3092\u3075\u308a\u8fd4\u3063\u3066\u3001\u6b21\u306e6\u30f6\u6708\u306e\u76ee\u6a19\u3068\u3001\u6bce\u6708\u306e\u4e2d\u9593\u76ee\u6a19\u3092\u6c7a\u3081\u307e\u3057\u3087\u3046\uff08\u7d0410\u5206\uff09\u3002\n\n\u25bc \u898b\u76f4\u3057\u3092\u306f\u3058\u3081\u308b\n' + LIFF_URL + '?v=review'
+      : name + '\u3055\u3093\u3001' + k + '\u30f6\u6708\u76ee\u306e\u898b\u76f4\u3057\u306e\u65e5\u3067\u3059\u3002\n\n\u4eca\u306e\u6570\u5b57\u3092\u5165\u308c\u3066\u3001\u4e2d\u9593\u76ee\u6a19\u306b\u3069\u3053\u307e\u3067\u8fd1\u3065\u3044\u305f\u304b\u78ba\u8a8d\u3057\u307e\u3057\u3087\u3046\u3002\u3046\u307e\u304f\u3044\u3063\u305f\u3053\u3068\u30fb\u6765\u6708\u306e\u5de5\u592b\u3082\u3072\u3068\u3053\u3068\u305a\u3064\uff08\u7d043\u5206\uff09\u3002\n\n\u25bc \u898b\u76f4\u3057\u3092\u306f\u3058\u3081\u308b\n' + LIFF_URL + '?v=review';
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: id, messages: [{ type: 'text', text: text }] })
+    });
+    if (res.getResponseCode() === 200) {
+      sent++;
+      upsert_(SH.month, x => String(x['\u4f1a\u54e1ID']) === id && Number(x['\u6708']) === n, { '\u4f1a\u54e1ID': id, '\u540d\u524d': name, '\u671f': c, '\u6708': n, '\u898b\u76f4\u3057\u65e5': date, 'LINE\u901a\u77e5\u65e5': today });
+    } else {
+      Logger.log('\u9001\u4fe1\u5931\u6557 ' + name + '\uff1a' + res.getResponseCode() + ' ' + res.getContentText());
+    }
+  });
+  Logger.log('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff1a' + sent + '\u4ef6\u9001\u4fe1');
+}
+
+/** \u52d5\u4f5c\u78ba\u8a8d\u7528\uff1a\u4f1a\u54e1\u30b7\u30fc\u30c8\u306e\u300c\u30e1\u30e2\u300d\u306b\u300c\u30c6\u30b9\u30c8\u9001\u4fe1\u300d\u3068\u66f8\u3044\u305f\u4eba\u306b\u3060\u3051\u3001\u898b\u76f4\u3057\u306e\u6848\u5185\u3092\u9001\u308b */
+function testPush() {
+  const token = prop_('LINE_MESSAGING_TOKEN');
+  if (!token) { Logger.log('LINE_MESSAGING_TOKEN \u304c\u672a\u8a2d\u5b9a\u3067\u3059'); return; }
+  const targets = table_(SH.member).rows.filter(r => /\u30c6\u30b9\u30c8\u9001\u4fe1/.test(String(r['\u30e1\u30e2'] || '')) && r['\u4f1a\u54e1ID']);
+  if (!targets.length) { Logger.log('\u30e1\u30e2\u306b\u300c\u30c6\u30b9\u30c8\u9001\u4fe1\u300d\u3068\u66f8\u3044\u305f\u4f1a\u54e1\u304c\u3044\u307e\u305b\u3093'); return; }
+  targets.forEach(r => {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify({ to: String(r['\u4f1a\u54e1ID']), messages: [{ type: 'text', text: '\u3010\u30c6\u30b9\u30c8\u3011' + (r['\u540d\u524d'] || '') + '\u3055\u3093\u30011\u30f6\u6708\u76ee\u306e\u898b\u76f4\u3057\u306e\u65e5\u3067\u3059\u3002\n\n\u25bc \u898b\u76f4\u3057\u3092\u306f\u3058\u3081\u308b\n' + LIFF_URL + '?v=review' }] })
+    });
+    Logger.log((r['\u540d\u524d'] || '') + '\uff1a' + res.getResponseCode() + ' ' + res.getContentText());
+  });
 }
 
 function uploadPhoto_(me, req) {
@@ -264,7 +379,7 @@ function meal_(me, req) {
   const key = prop_('ANTHROPIC_API_KEY');
   const m = findMember_(me.id);
   const text = String(req.text || '').slice(0, 800);
-  const img = String(req.image || '');
+  const img = m && String(m['\u30d7\u30e9\u30f3'] || '') === 'VIP' ? String(req.image || '') : ''; // \u5199\u771f\u306fVIP\u3060\u3051
   let reply;
   if (!key) {
     reply = '\uff08\u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u306e\u6e96\u5099\u4e2d\u3067\u3059\u3002\u3082\u3046\u3057\u3070\u3089\u304f\u304a\u5f85\u3061\u304f\u3060\u3055\u3044\uff09';
@@ -312,13 +427,14 @@ function checkAdmin_(req) {
 
 function adminData_(req) {
   checkAdmin_(req);
-  const recs = table_(SH.record).rows, photos = table_(SH.photo).rows;
+  const recs = table_(SH.record).rows, photos = table_(SH.photo).rows, monthRows = table_(SH.month).rows;
   const today = fmtDate_(new Date());
   const members = table_(SH.member).rows.filter(r => r['\u4f1a\u54e1ID']).map(r => {
     const m = memberOut_(r);
     const mine = recs.filter(x => String(x['\u4f1a\u54e1ID']) === m.id).map(recordOut_);
     const ph = photos.filter(x => String(x['\u4f1a\u54e1ID']) === m.id).map(photoOut_);
-    return { member: m, records: mine.slice(-60), photos: ph };
+    const mo = monthRows.filter(x => String(x['\u4f1a\u54e1ID']) === m.id && num_(x['\u6708'])).map(monthOut_).sort((a, b) => a.n - b.n);
+    return { member: m, records: mine.slice(-60), photos: ph, months: mo };
   });
   return { ok: true, today: today, members: members, sheetUrl: ss_().getUrl() };
 }
@@ -332,7 +448,7 @@ function adminPhoto_(req) {
 function setup() {
   const ss = ss_();
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '\uff1a' + e.message); } };
-  step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
+  step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('\u898b\u51fa\u3057\u306e\u8ffd\u52a0', () => {
     ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
     ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
@@ -358,6 +474,10 @@ function setup() {
     dst.setFrozenRows(1);
   });
   step('\u5199\u771f\u30d5\u30a9\u30eb\u30c0', () => photoRoot_());
+  step('\u6708\u306e\u76ee\u6a19\u30b7\u30fc\u30c8', () => { ensureHeaders_(SH.month, MONTH_HEAD); ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f']); const s = ss.getSheetByName(SH.month); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
+  step('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff08\u6bce\u671d9\u6642\uff09', () => {
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'monthlyReminder')) ScriptApp.newTrigger('monthlyReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
+  });
   CacheService.getScriptCache().removeAll(['c0', 'c1', 'c2', 'c3', 'cn']);
   Logger.log('setup \u5b8c\u4e86');
 }
