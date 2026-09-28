@@ -65,7 +65,8 @@ function load(d) {
   S.data = d; S.today = parseD(d.today) || new Date(); d.months = d.months || [];
   // 講義の出し分け：「不使用」は出さない／「VIPのみ」はVIPだけに準備週の必修として出す
   const vipM = d.member.plan === 'VIP';
-  d.content.lectures = d.content.lectures.filter(l => !/不使用/.test(l.status) && (vipM || !/VIPのみ/.test(l.kind + l.status)))
+  d.content.lectures = d.content.lectures.map(l => Object.assign(l, { title: String(l.title || '').trim(), kind: String(l.kind || '').trim() || (/^0-\d+$/.test(l.code) ? '必修' : '') }))
+    .filter(l => !/不使用/.test(l.status) && (vipM || !/VIPのみ/.test(l.kind + l.status)))
     .map(l => /VIPのみ/.test(l.kind + l.status) ? Object.assign({}, l, { kind: '必修', week: l.week == null ? 0 : l.week, vipOnly: true }) : l);
   // 番号順（0-0, 0-1, …, 1-0 …）に並べる。MS・HBなどはシートの順のまま後ろへ
   const key = c => { const m = String(c).match(/^(\d+)-(\d+)$/); return m ? +m[1] * 1000 + +m[2] : 1e9; };
