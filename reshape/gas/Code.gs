@@ -159,6 +159,9 @@ function courseEnd_(r) {
   let e = parseYmd_(fmtDate_(r['6ヶ月の日（支払日から）']));
   if (!e) { const st = parseYmd_(fmtDate_(r['開始日（DAY1）'])); if (st) e = new Date(st.getTime() + 181 * 864e5); }
   if (e && String(r['プラン'] || '') === 'VIP' && /延長する/.test(String(r['延長希望'] || ''))) e = addMonths_(e, 3);
+  // VIPは延長保証の測定（26週の終了日から7日以内）が終わるまでは使えるようにする
+  const st = parseYmd_(fmtDate_(r['開始日（DAY1）']));
+  if (e && st && String(r['プラン'] || '') === 'VIP') { const j = new Date(st.getTime() + 188 * 864e5); if (j > e) e = j; }
   return e;
 }
 // 受講期間が終わり、卒業生コミュニティにも参加していない（＝会員サイトの利用を終了する）

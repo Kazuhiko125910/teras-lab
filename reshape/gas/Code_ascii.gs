@@ -159,6 +159,9 @@ function courseEnd_(r) {
   let e = parseYmd_(fmtDate_(r['6\u30f6\u6708\u306e\u65e5\uff08\u652f\u6255\u65e5\u304b\u3089\uff09']));
   if (!e) { const st = parseYmd_(fmtDate_(r['\u958b\u59cb\u65e5\uff08DAY1\uff09'])); if (st) e = new Date(st.getTime() + 181 * 864e5); }
   if (e && String(r['\u30d7\u30e9\u30f3'] || '') === 'VIP' && /\u5ef6\u9577\u3059\u308b/.test(String(r['\u5ef6\u9577\u5e0c\u671b'] || ''))) e = addMonths_(e, 3);
+  // VIP\u306f\u5ef6\u9577\u4fdd\u8a3c\u306e\u6e2c\u5b9a\uff0826\u9031\u306e\u7d42\u4e86\u65e5\u304b\u30897\u65e5\u4ee5\u5185\uff09\u304c\u7d42\u308f\u308b\u307e\u3067\u306f\u4f7f\u3048\u308b\u3088\u3046\u306b\u3059\u308b
+  const st = parseYmd_(fmtDate_(r['\u958b\u59cb\u65e5\uff08DAY1\uff09']));
+  if (e && st && String(r['\u30d7\u30e9\u30f3'] || '') === 'VIP') { const j = new Date(st.getTime() + 188 * 864e5); if (j > e) e = j; }
   return e;
 }
 // \u53d7\u8b1b\u671f\u9593\u304c\u7d42\u308f\u308a\u3001\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u306b\u3082\u53c2\u52a0\u3057\u3066\u3044\u306a\u3044\uff08\uff1d\u4f1a\u54e1\u30b5\u30a4\u30c8\u306e\u5229\u7528\u3092\u7d42\u4e86\u3059\u308b\uff09

@@ -120,6 +120,9 @@ function courseEnd() {
   let e = parseD(m.end6);
   if (!e) { const st = parseD(m.start); if (st) e = addDays(st, 181); }
   if (e && m.plan === 'VIP' && /延長する/.test(m.extension)) e = addMonths(e, 3);
+  // VIPは延長保証の測定（26週の終了日から7日以内）が終わるまでは使えるようにする
+  const st = parseD(m.start);
+  if (e && st && m.plan === 'VIP' && dayDiff(addDays(st, 188), e) > 0) e = addDays(st, 188);
   return e;
 }
 // 受講期間が終わり、卒業生コミュニティにも参加していない → 会員サイトの利用は終了
