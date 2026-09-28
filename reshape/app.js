@@ -67,6 +67,9 @@ function load(d) {
   const vipM = d.member.plan === 'VIP';
   d.content.lectures = d.content.lectures.filter(l => !/不使用/.test(l.status) && (vipM || !/VIPのみ/.test(l.kind + l.status)))
     .map(l => /VIPのみ/.test(l.kind + l.status) ? Object.assign({}, l, { kind: '必修', week: l.week == null ? 0 : l.week, vipOnly: true }) : l);
+  // 番号順（0-0, 0-1, …, 1-0 …）に並べる。MS・HBなどはシートの順のまま後ろへ
+  const key = c => { const m = String(c).match(/^(\d+)-(\d+)$/); return m ? +m[1] * 1000 + +m[2] : 1e9; };
+  d.content.lectures = d.content.lectures.map((l, i) => [l, i]).sort((a, b) => (key(a[0].code) - key(b[0].code)) || (a[1] - b[1])).map(x => x[0]);
   const m = d.member;
   const st = parseD(m.start);
   S.day = st ? dayDiff(S.today, st) + 1 : 0;
@@ -424,7 +427,9 @@ function vToday() {
 }
 
 function vWaiting() {
-  return `<section class="card msgcard"><img src="logo-full.webp" alt="Teras Lab. RESHAPE" style="width:160px"><h2>目標の登録ありがとうございます</h2><p>いま担当がプランと開始日を設定しています。準備ができると、毎日のメニューがここに表示されます。もうしばらくお待ちください。</p></section>${goalCard()}`;
+  const first = C().lectures.filter(l => l.week === 0 && /^0-/.test(l.code) && l.link);
+  return `<section class="card msgcard"><img src="logo-full.webp" alt="Teras Lab. RESHAPE" style="width:160px"><h2>目標の登録ありがとうございます</h2><p>いま担当がプランと開始日を設定しています。準備ができると、毎日のメニューがここに表示されます。もうしばらくお待ちください。</p></section>
+  ${first.length ? `<section class="sec"><div class="sec-h"><h2>はじめに見る動画</h2><span class="aside">番号の順に見てください</span></div><div class="card">${first.map(l => `<div class="item" style="grid-template-columns:1fr auto"><div><div class="t"><span class="code">${esc(l.code)}</span>${esc(l.title)}</div><div class="s">${l.min ? l.min + '分' : ''}</div></div><a class="play" href="${esc(l.link)}" target="_blank" rel="noopener">▶ 見る</a></div>`).join('')}</div></section>` : ''}${goalCard()}`;
 }
 
 // ---------- 卒業生・終了 ----------
