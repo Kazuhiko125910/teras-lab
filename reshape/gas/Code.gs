@@ -44,6 +44,7 @@ function doPost(e) {
     if (a === 'saveReview') return json_(saveReview_(me, req));
     if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
     if (a === 'getPhoto') return json_(getPhoto_(me, req));
+    if (a === 'deletePhoto') return json_(deletePhoto_(me, req));
     if (a === 'meal') return json_(meal_(me, req));
     return json_({ ok: false, error: 'unknown_action' });
   } catch (err) {
@@ -370,6 +371,20 @@ function getPhoto_(me, req) {
   const own = table_(SH.photo).rows.some(r => String(r['会員ID']) === me.id && (fileId_(r['正面の写真']) === id || fileId_(r['横向きの写真']) === id));
   if (!own) throw new Error('not_allowed');
   return { ok: true, dataUrl: thumb_(id) };
+}
+
+// 会員が自分の写真を削除（ドライブのファイルはゴミ箱へ＝30日間は復元できる）
+function deletePhoto_(me, req) {
+  const id = String(req.fileId || '');
+  const t = table_(SH.photo);
+  const r = t.rows.find(x => String(x['会員ID']) === me.id && (fileId_(x['正面の写真']) === id || fileId_(x['横向きの写真']) === id));
+  if (!r) throw new Error('not_allowed');
+  const col = fileId_(r['正面の写真']) === id ? '正面の写真' : '横向きの写真';
+  const other = col === '正面の写真' ? '横向きの写真' : '正面の写真';
+  if (fileId_(r[other])) t.sheet.getRange(r._row, t.col[col] + 1).setValue('');
+  else t.sheet.deleteRow(r._row);
+  try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { /* ファイルが見つからなくても記録は消す */ }
+  return { ok: true };
 }
 
 function thumb_(id) {

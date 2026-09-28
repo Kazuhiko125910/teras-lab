@@ -517,6 +517,7 @@ function vPhoto() {
   return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>ビフォー・アフター</h2><span class="aside">オレンジ線は垂直の目安</span></div>
   <div class="card">${ph.length ? `<div class="sideseg" role="group" aria-label="向き" style="padding-top:14px"><button type="button" data-side="side" aria-pressed="${S.cmpSide === 'side'}">横向き</button><button type="button" data-side="front" aria-pressed="${S.cmpSide === 'front'}">正面</button></div><div class="cmp">${shot(L, L === R ? '' : '過去')}${shot(R, R === latest ? '最新' : L === R ? '' : '比較')}</div><p class="cmp-note">左が過去、右が新しい写真です。下のボタンで比べる日を選べます。</p>
   <div class="pick" role="group" aria-label="比べる写真">${ph.map(p => `<button type="button" data-cmp="${p.day}" aria-pressed="${S.cmp.includes(p.day)}">${wkLabel(p.day)}<small>DAY ${p.day}</small></button>`).join('')}</div>` : '<p style="padding:14px;color:var(--muted);font-size:13px">まだ写真がありません。最初の1枚を撮ってみましょう。</p>'}</div></section>
+  ${ph.length ? `<section class="sec" style="margin-top:10px"><div class="card"><details class="catch ph-manage" style="border-top:0"><summary><span style="all:unset">投稿した写真の一覧・削除</span><span>${ph.length}日分</span></summary>${[...ph].reverse().map(p => `<div class="item" style="grid-template-columns:1fr auto"><div><div class="t">${wkLabel(p.day)}<span class="s" style="display:inline;margin-left:6px">DAY ${p.day}・${esc(p.date)}</span></div>${p.label && p.label !== wkLabel(p.day) ? `<div class="s">${esc(p.label)}</div>` : ''}</div><div class="ph-del">${[['front', '正面'], ['side', '横向き']].filter(([k]) => p[k]).map(([k, l]) => `<button type="button" data-delph="${esc(p[k])}" data-dellabel="${wkLabel(p.day)}（DAY ${p.day}）の${l}">${l}を削除</button>`).join('')}</div></div>`).join('')}</details></div></section>` : ''}
   ${ended ? '' : `<section class="sec"><div class="sec-h"><h2>写真を追加</h2><span class="aside">いつでも追加できます</span></div>
   <div class="card" style="padding-top:14px"><div class="two" style="padding:0 14px 14px">
     <div class="upload" style="margin:0"><b>正面</b><input type="file" id="ph-front" accept="image/*"><label for="ph-front">選ぶ</label></div>
@@ -805,6 +806,25 @@ function burst() {
   let f = 0; (function tk() { x.clearRect(0, 0, c.width, c.height); ps.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += .35; p.a -= .012; x.globalAlpha = Math.max(p.a, 0); x.fillStyle = p.c; x.beginPath(); x.arc(p.x, p.y, p.r, 0, 7); x.fill(); }); if (++f < 90) requestAnimationFrame(tk); else x.clearRect(0, 0, c.width, c.height); })();
 }
 
+// ---------- 写真の削除 ----------
+function confirmDelete(id, label) {
+  const box = document.createElement('div'); box.className = 'toast'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '写真の削除');
+  box.innerHTML = `<div class="box"><h3>写真を削除しますか？</h3><p>${esc(label)}の写真を削除します。<br>元に戻す場合は担当にご連絡ください。</p><div class="two" style="margin-top:12px"><button type="button" class="btn ghost" data-dx="no">やめる</button><button type="button" class="btn" data-dx="yes">削除する</button></div></div>`;
+  document.body.appendChild(box);
+  box.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-dx]'); if (!b) return;
+    box.remove(); if (b.dataset.dx !== 'yes') return;
+    toast('削除しています…');
+    try {
+      await api('deletePhoto', { fileId: id });
+      S.data.photos.forEach(p => { if (p.front === id) p.front = ''; if (p.side === id) p.side = ''; });
+      S.data.photos = S.data.photos.filter(p => p.front || p.side);
+      delete S.photoCache[id]; S.cmp = [];
+      toast('写真を削除しました'); route();
+    } catch (e) { toast('削除できませんでした。もう一度お試しください'); }
+  });
+}
+
 // ---------- 動画プレーヤー（Vimeoをサイト内で再生） ----------
 function vimeoEmbed(url) {
   const m = String(url || '').match(/vimeo\.com\/(?:video\/)?(\d+)(?:\/([0-9a-f]+))?(?:.*[?&]h=([0-9a-f]+))?/i);
@@ -842,6 +862,7 @@ document.addEventListener('click', async e => {
   if (t.dataset.day) { S.sel = +t.dataset.day; route(); return; }
   if (t.dataset.chart) { S.chart = +t.dataset.chart; route(); return; }
   if (t.dataset.side) { S.cmpSide = t.dataset.side; route(); return; }
+  if (t.dataset.delph) { confirmDelete(t.dataset.delph, t.dataset.dellabel); return; }
   if (t.dataset.cmp) { const d = +t.dataset.cmp, L = S.cmp[0], R = S.cmp[1] ?? S.cmp[0]; if (!S.cmp.includes(d)) S.cmp = d > R ? [L, d] : [d, R]; route(); return; }
   if (t.dataset.q) { sendMeal(t.dataset.q); return; }
   if (t.dataset.nay) { const a = S.work.nay, n = t.dataset.nay; a.includes(n) ? a.splice(a.indexOf(n), 1) : a.push(n); route(); return; }

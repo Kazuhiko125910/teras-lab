@@ -44,6 +44,7 @@ function doPost(e) {
     if (a === 'saveReview') return json_(saveReview_(me, req));
     if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
     if (a === 'getPhoto') return json_(getPhoto_(me, req));
+    if (a === 'deletePhoto') return json_(deletePhoto_(me, req));
     if (a === 'meal') return json_(meal_(me, req));
     return json_({ ok: false, error: 'unknown_action' });
   } catch (err) {
@@ -370,6 +371,20 @@ function getPhoto_(me, req) {
   const own = table_(SH.photo).rows.some(r => String(r['\u4f1a\u54e1ID']) === me.id && (fileId_(r['\u6b63\u9762\u306e\u5199\u771f']) === id || fileId_(r['\u6a2a\u5411\u304d\u306e\u5199\u771f']) === id));
   if (!own) throw new Error('not_allowed');
   return { ok: true, dataUrl: thumb_(id) };
+}
+
+// \u4f1a\u54e1\u304c\u81ea\u5206\u306e\u5199\u771f\u3092\u524a\u9664\uff08\u30c9\u30e9\u30a4\u30d6\u306e\u30d5\u30a1\u30a4\u30eb\u306f\u30b4\u30df\u7bb1\u3078\uff1d30\u65e5\u9593\u306f\u5fa9\u5143\u3067\u304d\u308b\uff09
+function deletePhoto_(me, req) {
+  const id = String(req.fileId || '');
+  const t = table_(SH.photo);
+  const r = t.rows.find(x => String(x['\u4f1a\u54e1ID']) === me.id && (fileId_(x['\u6b63\u9762\u306e\u5199\u771f']) === id || fileId_(x['\u6a2a\u5411\u304d\u306e\u5199\u771f']) === id));
+  if (!r) throw new Error('not_allowed');
+  const col = fileId_(r['\u6b63\u9762\u306e\u5199\u771f']) === id ? '\u6b63\u9762\u306e\u5199\u771f' : '\u6a2a\u5411\u304d\u306e\u5199\u771f';
+  const other = col === '\u6b63\u9762\u306e\u5199\u771f' ? '\u6a2a\u5411\u304d\u306e\u5199\u771f' : '\u6b63\u9762\u306e\u5199\u771f';
+  if (fileId_(r[other])) t.sheet.getRange(r._row, t.col[col] + 1).setValue('');
+  else t.sheet.deleteRow(r._row);
+  try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { /* \u30d5\u30a1\u30a4\u30eb\u304c\u898b\u3064\u304b\u3089\u306a\u304f\u3066\u3082\u8a18\u9332\u306f\u6d88\u3059 */ }
+  return { ok: true };
 }
 
 function thumb_(id) {
