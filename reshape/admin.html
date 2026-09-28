@@ -7,7 +7,7 @@
 <title>RESHAPE 管理</title>
 <link rel="icon" href="logo-mark.webp">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Outfit:wght@400;600;700&family=Cormorant+Garamond:wght@500&family=Cinzel:wght@500;600&display=swap">
-<link rel="stylesheet" href="styles.css?v=2">
+<link rel="stylesheet" href="styles.css?v=10">
 <style>
 .wrap{max-width:760px;padding-block:12px 40px}
 .login{padding:22px 18px;display:grid;gap:10px}
@@ -64,6 +64,21 @@ function reviewInfo(x) {
   const mo = x.months || [], r = mo.find(m => m.n === p);
   return { p, late: p >= 1 && !(r && r.doneAt), next: addM(st, p + 1), done: mo.filter(m => m.doneAt).length };
 }
+function gtee(x) {
+  const m = x.member, st = parseD(m.start), today = parseD(DATA.today); if (!st) return null;
+  const vip = m.plan === 'VIP', total = vip ? 26 : 13, need = vip ? 22 : 11;
+  const week = Math.ceil((dd(today, st) + 1) / 7), doneW = Math.min(total, Math.max(0, week - 1));
+  const cnt = {}; x.records.forEach(r => { const d = parseD(r.date); if (!d) return; const w = Math.ceil((dd(d, st) + 1) / 7); cnt[w] = (cnt[w] || 0) + 1; });
+  let ok = 0; for (let w = 1; w <= doneW; w++) if ((cnt[w] || 0) >= 3) ok++;
+  const miss = doneW - ok, lost = miss > total - need, done = week > total;
+  const tg = m.goal.targets, recs = x.records;
+  const nowOf = i => { for (let j = recs.length - 1; j >= 0; j--) { const v = recs[j].g && recs[j].g[i] != null ? recs[j].g[i] : null; if (v != null) return v; } return null; };
+  const hit = tg.filter((t, i) => { const v = nowOf(i); return v != null && t.start != null && t.target != null && (t.target < t.start ? v <= t.target : v >= t.target); }).length;
+  const fin = (x.months || []).find(r => r.n === 6 && r.doneAt); // 6ヶ月の最終見直しの達成数を優先
+  const hits = fin && fin.hit != null ? fin.hit : hit;
+  const eligible = done && !lost && (vip ? hits < 2 : true);
+  return { ok, total, need, lost, done, eligible, vip };
+}
 function stat(x) {
   const m = x.member, today = parseD(DATA.today), st = parseD(m.start);
   const day = st ? dd(today, st) + 1 : 0, week = day > 0 ? Math.ceil(day / 7) : 0;
@@ -90,7 +105,7 @@ function render() {
 function card(x, lbl) {
   const m = x.member, s = x.s;
   return `<div class="mem" data-id="${esc(m.id)}"><div class="nm">${esc(m.name || '（名前未登録）')}<small>${esc(m.plan || '未設定')}</small><small>${esc(m.status)}</small></div><span class="pill ${s.st}">${lbl[s.st] || '—'}</span>
-  <div class="meta"><span>DAY <b>${s.day > 0 ? s.day : '開始前'}</b></span>${(() => { const r = reviewInfo(x); return r ? `<span>見直し <b style="color:${r.late ? 'var(--warn)' : 'inherit'}">${r.late ? r.p + 'ヶ月目 未記入' : '次 ' + md(r.next)}</b></span>` : ''; })()}<span>今週 <b>${s.wk}/3</b>日</span><span>最終記録 <b>${s.last ? (s.gap === 0 ? '今日' : s.gap + '日前') : 'なし'}</b></span><span>サポート終了 <b>${md(s.end)}</b></span>${m.plan === 'VIP' ? `<span>次のZoom <b>${esc(m.zoomAt || '未定')}</b></span>` : ''}</div>
+  <div class="meta"><span>DAY <b>${s.day > 0 ? s.day : '開始前'}</b></span>${(() => { const r = reviewInfo(x); return r ? `<span>見直し <b style="color:${r.late ? 'var(--warn)' : 'inherit'}">${r.late ? r.p + 'ヶ月目 未記入' : '次 ' + md(r.next)}</b></span>` : ''; })()}<span>今週 <b>${s.wk}/3</b>日</span><span>最終記録 <b>${s.last ? (s.gap === 0 ? '今日' : s.gap + '日前') : 'なし'}</b></span><span>サポート終了 <b>${md(s.end)}</b></span>${(() => { const g = gtee(x); return g ? `<span>延長保証 <b style="color:${g.eligible ? 'var(--good)' : g.lost ? 'var(--bad)' : 'inherit'}">${g.ok}/${g.total}週${g.eligible ? '・対象' : g.lost ? '・対象外' : ''}</b></span>` : ''; })()}${m.plan === 'VIP' ? `<span>次のZoom <b>${esc(m.zoomAt || '未定')}</b></span>` : ''}</div>
   <div class="spark" aria-label="直近4週の記録">${s.pat.map(c => `<i class="${c}"></i>`).join('')}</div>
   ${OPEN === m.id ? detail(x) : ''}</div>`;
 }

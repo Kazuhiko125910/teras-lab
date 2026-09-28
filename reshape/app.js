@@ -283,6 +283,17 @@ function plan(day) {
 function missed() { return C().lectures.filter(l => l.week != null && l.week < S.week && /必修|目安/.test(l.kind) && !/^(MS|HB)-/.test(l.code) && l.link && !S.watched.has(l.code)); }
 function msFor(txt) { const vip = S.data.member.plan === 'VIP'; return String(txt || '').split('／').map(x => x.trim()).filter(x => x && (vip || !/Zoom|VIP|カウンセリング/.test(x)) && (!vip || !/STANDARD/.test(x))).map(x => x.replace(/^VIP[：\s]*/, '')); }
 
+// ---------- 延長保証（週3日以上の記録を続けた人に3ヶ月延長） ----------
+// VIP：26週のうち22週以上（6ヶ月の最終見直しで、卒業目標が未達なら対象）
+// STANDARD：最初の13週のうち11週以上（3ヶ月時点で判定 → LINEサポートを6ヶ月まで延長）
+function guarantee() {
+  const vip = S.data.member.plan === 'VIP';
+  const total = vip ? 26 : 13, need = vip ? 22 : 11;
+  const doneWeeks = Math.min(total, Math.max(0, S.week - 1)); // 終わった週だけ数える
+  let ok = 0; for (let w = 1; w <= doneWeeks; w++) if (recInWeek(w) >= 3) ok++;
+  const miss = doneWeeks - ok, canMiss = total - need;
+  return { vip, total, need, ok, doneWeeks, miss, left: canMiss - miss, lost: miss > canMiss, over: S.week > total };
+}
 function recInWeek(w) { const st = parseD(S.data.member.start); if (!st) return 0; return S.data.records.filter(r => { const d = parseD(r.date); if (!d) return false; const n = dayDiff(d, st) + 1; return Math.ceil(n / 7) === w; }).length; }
 function streak() { let s = 0, d = todayRec() ? S.today : addDays(S.today, -1); const set = new Set(S.data.records.map(r => r.date)); while (set.has(fmt(d))) { s++; d = addDays(d, -1); } return s; }
 
@@ -399,7 +410,7 @@ function vToday() {
   const tw = String(P.R.freq || '');
   return hero() + reviewCard() + `
   <div class="meter"><div class="dots" aria-label="今週の記録 ${wr}日">${[1, 2, 3].map(i => `<span class="${i <= wr ? 'on' : ''}">${i <= wr ? '✓' : i}</span>`).join('')}</div>
-    <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${wr >= 3 ? '今週の延長保証ラインをクリアしました' : 'あと' + (3 - wr) + '日で今週の延長保証ラインをクリア'}</p></div></div>
+    <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${wr >= 3 ? '今週の延長保証ラインをクリアしました' : 'あと' + (3 - wr) + '日で今週の延長保証ラインをクリア'}</p>${(() => { const g = guarantee(); if (S.week < 1 || g.over) return ''; return `<p class="gtee">延長保証：クリアした週 <b class="num">${g.ok}</b> / ${g.total}週（条件 ${g.need}週以上）${g.lost ? '<br>条件には届きませんでしたが、ここからの積み重ねが結果につながります' : g.left <= 1 ? '<br><b>あと' + g.left + '週まで</b>お休みしても条件を満たせます' : ''}</p>`; })()}</div></div>
   ${zoomCard()}${supportBar()}
   <div class="streak"><div class="stat"><div class="v">${streakN}<small>日</small></div><div class="k">連続記録</div></div><div class="stat"><div class="v">${S.data.records.length}<small>日</small></div><div class="k">これまでの記録</div></div><div class="stat"><div class="v">${S.week}<small>/26週</small></div><div class="k">いまの週</div></div></div>
   ${goalCard()}

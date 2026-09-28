@@ -429,3 +429,5 @@ nav.tabs button[aria-current="page"]{color:var(--primary)}
 .ph-manage{margin:0}
 .ph-del{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .ph-del button{border:1px solid var(--line);background:var(--surface);color:var(--bad);border-radius:99px;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.meter .gtee{margin-top:4px;font-size:11px;color:var(--muted)}
+.meter .gtee b{color:var(--ink)}
