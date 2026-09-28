@@ -454,7 +454,7 @@ function vGrad() {
   const D = dailyOf(S.day);
   const items = D ? [['s1', D[3]], ['s2', D[4]]].map(([k, c]) => C().stretch[c] ? { k, code: c, t: C().stretch[c][0], link: C().stretch[c][1], s: 'ストレッチ' } : null).filter(Boolean) : [];
   return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">${S.data.member.status === '卒業生' ? 'RESHAPE 卒業生' : 'RESHAPE 第' + curCycle() + '期'}</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span>${goalCyc() > 1 ? `<span class="chip">第${goalCyc()}期の目標に挑戦中</span>` : `<span class="chip">卒業目標 ${n}/${res.length} 達成</span>`}${S.data.member.status === '卒業生' ? '<span class="chip">卒業生コミュニティ</span>' : ''}</div></div>${spine(1)}</div></section>
-  ${reviewCard()}${goalCard()}
+  ${reviewCard()}${supportOver() ? '' : zoomCard() + supportBar()}${goalCard()}
   <div class="meter"><div class="dots">${[1, 2, 3].map(i => `<span class="${i <= Math.min(3, recThisCalWeek()) ? 'on' : ''}">${i <= recThisCalWeek() ? '✓' : i}</span>`).join('')}</div><div><b>今週 ${recThisCalWeek()}日</b><p>卒業後も、週3日を目安に続けましょう</p></div></div>
   <section class="sec"><div class="sec-h"><h2>今日のストレッチ</h2></div><div class="card">${items.map(row).join('')}<div class="note">困ったときは「道のり」の辞書から選べます。</div></div></section>
   ${recordBlock()}`;
