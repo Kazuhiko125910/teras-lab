@@ -405,7 +405,7 @@ function vToday() {
   <div class="sched">
     <div class="sch today ${S.form.mirror ? 'done' : ''}"><div class="ic">${icMirror}</div><b>鏡チェック</b><span class="when">毎日・今日</span></div>
     <div class="sch ${isCheckDay ? 'today' : ''}"><div class="ic">${icCheck}</div><b>姿勢チェック</b><span class="when">${isCheckDay ? '今日（週1回）' : '毎週' + DOW[addDays(S.today, 6 - P.dow).getDay()] + '曜日'}</span></div>
-    <div class="sch ${photoNow ? 'today' : ''}"><div class="ic">${icCam}</div><b>姿勢の撮影</b><span class="when">${due ? (photoNow ? esc(due.l) + '（今週）' : 'DAY' + due.d + '（あと' + (due.d - S.day) + '日）') : '—'}</span></div>
+    <div class="sch ${photoNow ? 'today' : ''}"><div class="ic">${icCam}</div><b>姿勢の撮影</b><span class="when">${due ? (photoNow ? '目安の時期です' : '目安 DAY' + due.d + '（あと' + (due.d - S.day) + '日）') : 'いつでもOK'}</span></div>
   </div>
   <div class="card" style="margin-top:10px">
     <div class="item"><button type="button" class="check" aria-pressed="${!!S.form.mirror}" aria-label="鏡チェック" data-mirror="○">${tick}</button><div><div class="t">鏡チェック</div><div class="s">横向きで耳・肩・骨盤が一直線か見る（10秒）</div></div><span></span></div>
@@ -506,19 +506,22 @@ function chart(x) {
 function vPhoto() {
   const ph = [...S.data.photos].sort((a, b) => a.day - b.day);
   if (S.cmp.length < 2 && ph.length) S.cmp = [ph[0].day, ph[ph.length - 1].day];
+  S.cmp = [...new Set(S.cmp)].sort((a, b) => a - b); // 左＝過去、右＝新しい
+  const latest = ph.length ? ph[ph.length - 1].day : null;
   const byDay = d => ph.find(p => p.day === d);
-  const shot = d => { const p = byDay(d); const id = p ? (S.cmpSide === 'front' ? p.front : p.side) || p.side || p.front : ''; const src = id && S.photoCache[id]; return `<div class="shot">${src ? `<img src="${src}" alt="DAY${d}の写真">` : `<div class="ph-empty">${id ? '読み込み中…' : '写真なし'}</div>`}<div class="grid-line"></div><span class="cap">DAY ${d}</span></div>`; };
+  const shot = (d, tag) => { const p = byDay(d); const id = p ? (S.cmpSide === 'front' ? p.front : p.side) || p.side || p.front : ''; const src = id && S.photoCache[id]; return `<div class="shot">${src ? `<img src="${src}" alt="DAY${d}の写真">` : `<div class="ph-empty">${id ? '読み込み中…' : '写真なし'}</div>`}<div class="grid-line"></div><span class="cap">${tag ? tag + '・' : ''}DAY ${d}</span></div>`; };
+  const L = S.cmp[0], R = S.cmp[1] ?? S.cmp[0];
   const list = photoPlan(), due = photoDue(), ended = S.mode === 'ended';
   return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>ビフォー・アフター</h2><span class="aside">オレンジ線は垂直の目安</span></div>
-  <div class="card">${ph.length ? `<div class="sideseg" role="group" aria-label="向き" style="padding-top:14px"><button type="button" data-side="side" aria-pressed="${S.cmpSide === 'side'}">横向き</button><button type="button" data-side="front" aria-pressed="${S.cmpSide === 'front'}">正面</button></div><div class="cmp">${shot(S.cmp[0])}${shot(S.cmp[1] ?? S.cmp[0])}</div>
+  <div class="card">${ph.length ? `<div class="sideseg" role="group" aria-label="向き" style="padding-top:14px"><button type="button" data-side="side" aria-pressed="${S.cmpSide === 'side'}">横向き</button><button type="button" data-side="front" aria-pressed="${S.cmpSide === 'front'}">正面</button></div><div class="cmp">${shot(L, L === R ? '' : '過去')}${shot(R, R === latest ? '最新' : L === R ? '' : '比較')}</div><p class="cmp-note">左が過去、右が新しい写真です。下のボタンで比べる日を選べます。</p>
   <div class="pick" role="group" aria-label="比べる写真">${ph.map(p => `<button type="button" data-cmp="${p.day}" aria-pressed="${S.cmp.includes(p.day)}">DAY ${p.day}</button>`).join('')}</div>` : '<p style="padding:14px;color:var(--muted);font-size:13px">まだ写真がありません。最初の1枚を撮ってみましょう。</p>'}</div></section>
-  ${ended ? '' : `<section class="sec"><div class="sec-h"><h2>写真を追加</h2><span class="aside">${due ? '次は ' + esc(due.l) + '（DAY' + due.d + '〜）' : ''}</span></div>
+  ${ended ? '' : `<section class="sec"><div class="sec-h"><h2>写真を追加</h2><span class="aside">いつでも追加できます</span></div>
   <div class="card" style="padding-top:14px"><div class="two" style="padding:0 14px 14px">
     <div class="upload" style="margin:0"><b>正面</b><input type="file" id="ph-front" accept="image/*"><label for="ph-front">選ぶ</label></div>
     <div class="upload" style="margin:0"><b>横向き</b><input type="file" id="ph-side" accept="image/*"><label for="ph-side">選ぶ</label></div></div>
-  <div class="tips"><div><b>1</b>壁から1歩離れ、足をそろえて立つ（頭から足先まで入れる）</div><div><b>2</b>スマホは胸の高さ・2m離して縦向き</div><div><b>3</b>毎回同じ場所・同じ服装で</div><div><b>4</b>選んだあと、足首が中央の線にくるよう自動で位置を合わせます</div></div></div></section>
-  <section class="sec"><div class="sec-h"><h2>撮影スケジュール</h2><span class="aside">${S.data.member.plan === 'VIP' ? 'Zoom面談の前ごと' : '4週ごと'}</span></div>
-  <div class="card">${list.map((p, i) => { const ok = photoTaken(p, i, list); return `<div class="item"><span class="check" aria-hidden="true" ${ok ? 'data-on' : ''}>${ok ? tick : ''}</span><div><div class="t">${esc(p.l)}</div><div class="s num">DAY ${p.d}〜</div></div><span class="pill ${ok ? 'good' : due && due.d === p.d ? (p.d <= S.day ? 'bad' : 'warn') : ''}">${ok ? '撮影済み' : due && due.d === p.d ? (p.d <= S.day ? '今撮りましょう' : '次回') : p.d < S.day ? '—' : '予定'}</span></div>`; }).join('')}</div></section>`}`;
+  <div class="tips"><div><b>1</b>壁から1歩離れ、足をそろえて立つ（頭から足先まで入れる）</div><div><b>2</b>スマホは胸の高さ・2m離して縦向き</div><div><b>3</b>毎回同じ場所・同じ服装で</div><div><b>4</b>選んだあと、足首が中央の線にくるよう自動で位置を合わせます</div><div><b>5</b>同じ日にもう一度送ると、その日の写真が新しいものに入れ替わります</div></div></div></section>
+  <section class="sec"><div class="sec-h"><h2>撮影の目安</h2><span class="aside">${S.data.member.plan === 'VIP' ? 'Zoom面談の前ごと' : '4週ごと'}</span></div>
+  <div class="card"><div class="note" style="border-top:0">写真はいつでも撮影・追加できます。下の時期に撮っておくと、変化を比べやすくなります。</div>${list.map((p, i) => { const ok = photoTaken(p, i, list); return `<div class="item"><span class="check" aria-hidden="true" ${ok ? 'data-on' : ''}>${ok ? tick : ''}</span><div><div class="t">${esc(p.l)}</div><div class="s num">DAY ${p.d}ごろ</div></div><span class="pill ${ok ? 'good' : due && due.d === p.d ? 'warn' : ''}">${ok ? '撮影済み' : due && due.d === p.d ? (p.d <= S.day ? '目安の時期です' : '次の目安') : p.d < S.day ? '—' : '目安'}</span></div>`; }).join('')}</div></section>`}`;
 }
 async function loadPhotos() {
   const ids = []; S.cmp.forEach(d => { const p = S.data.photos.find(x => x.day === d); if (p) { const id = (S.cmpSide === 'front' ? p.front : p.side) || p.side || p.front; if (id && !S.photoCache[id]) ids.push(id); } });
@@ -837,7 +840,7 @@ document.addEventListener('click', async e => {
   if (t.dataset.day) { S.sel = +t.dataset.day; route(); return; }
   if (t.dataset.chart) { S.chart = +t.dataset.chart; route(); return; }
   if (t.dataset.side) { S.cmpSide = t.dataset.side; route(); return; }
-  if (t.dataset.cmp) { const d = +t.dataset.cmp; if (!S.cmp.includes(d)) S.cmp = [S.cmp[1] ?? S.cmp[0], d].filter(v => v != null); route(); return; }
+  if (t.dataset.cmp) { const d = +t.dataset.cmp, L = S.cmp[0], R = S.cmp[1] ?? S.cmp[0]; if (!S.cmp.includes(d)) S.cmp = d > R ? [L, d] : [d, R]; route(); return; }
   if (t.dataset.q) { sendMeal(t.dataset.q); return; }
   if (t.dataset.nay) { const a = S.work.nay, n = t.dataset.nay; a.includes(n) ? a.splice(a.indexOf(n), 1) : a.push(n); route(); return; }
   if (t.id === 'save') { if (S.mode === 'grad') { S.P = { train: [], D: null }; } saveDay(); return; }
@@ -877,7 +880,7 @@ document.addEventListener('change', async e => {
       const r = await api('uploadPhoto', { photo: { date: fmt(S.today), day: Math.max(S.day, 1), label: due ? due.l : '', side, dataUrl } });
       let p = S.data.photos.find(x => x.date === fmt(S.today));
       if (!p) { p = { date: fmt(S.today), day: Math.max(S.day, 1), label: due ? due.l : '', front: '', side: '' }; S.data.photos.push(p); }
-      p[side] = r.fileId; S.photoCache[r.fileId] = dataUrl; S.cmpSide = side; S.cmp = [S.cmp[0] ?? p.day, p.day];
+      p[side] = r.fileId; S.photoCache[r.fileId] = dataUrl; S.cmpSide = side; S.cmp = [S.cmp[0] ?? p.day, p.day].sort((a, b) => a - b);
       toast('写真を保存しました'); route();
     } catch (err) { toast('写真を送れませんでした。もう一度お試しください'); }
   }
