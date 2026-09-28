@@ -287,6 +287,8 @@ function photoPlan() {
   if (vip) return [{ d: 1, l: 'スタート' }, ...Object.keys(ZOOM_NO).map(w => ({ d: (w - 1) * 7 + 1, l: 'Zoom' + ZOOM_NO[w] + 'の前' })), { d: 182, l: '卒業' }];
   return [1, 29, 57, 85].map((d, i) => ({ d, l: d === 1 ? 'スタート' : (i * 4) + '週目' }));
 }
+const wkOf = d => 'W' + Math.max(1, Math.ceil(d / 7));
+const wkLabel = d => '第' + Math.max(1, Math.ceil(d / 7)) + '週';
 function photoTaken(p, i, list) { const next = list[i + 1] ? list[i + 1].d : 9999; return S.data.photos.some(x => x.day >= p.d && x.day < next && (x.front || x.side)); }
 function photoDue() { const list = photoPlan(); let last = -1; list.forEach((p, i) => { if (photoTaken(p, i, list)) last = i; }); return list.find((p, i) => i > last) || null; }
 
@@ -509,12 +511,12 @@ function vPhoto() {
   S.cmp = [...new Set(S.cmp)].sort((a, b) => a - b); // 左＝過去、右＝新しい
   const latest = ph.length ? ph[ph.length - 1].day : null;
   const byDay = d => ph.find(p => p.day === d);
-  const shot = (d, tag) => { const p = byDay(d); const id = p ? (S.cmpSide === 'front' ? p.front : p.side) || p.side || p.front : ''; const src = id && S.photoCache[id]; return `<div class="shot">${src ? `<img src="${src}" alt="DAY${d}の写真">` : `<div class="ph-empty">${id ? '読み込み中…' : '写真なし'}</div>`}<div class="grid-line"></div><span class="cap">${tag ? tag + '・' : ''}DAY ${d}</span></div>`; };
+  const shot = (d, tag) => { const p = byDay(d); const id = p ? (S.cmpSide === 'front' ? p.front : p.side) || p.side || p.front : ''; const src = id && S.photoCache[id]; return `<div class="shot">${src ? `<img src="${src}" alt="DAY${d}の写真">` : `<div class="ph-empty">${id ? '読み込み中…' : '写真なし'}</div>`}<div class="grid-line"></div><span class="cap">${tag ? tag + '・' : ''}${wkLabel(d)}（DAY ${d}）</span></div>`; };
   const L = S.cmp[0], R = S.cmp[1] ?? S.cmp[0];
   const list = photoPlan(), due = photoDue(), ended = S.mode === 'ended';
   return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>ビフォー・アフター</h2><span class="aside">オレンジ線は垂直の目安</span></div>
   <div class="card">${ph.length ? `<div class="sideseg" role="group" aria-label="向き" style="padding-top:14px"><button type="button" data-side="side" aria-pressed="${S.cmpSide === 'side'}">横向き</button><button type="button" data-side="front" aria-pressed="${S.cmpSide === 'front'}">正面</button></div><div class="cmp">${shot(L, L === R ? '' : '過去')}${shot(R, R === latest ? '最新' : L === R ? '' : '比較')}</div><p class="cmp-note">左が過去、右が新しい写真です。下のボタンで比べる日を選べます。</p>
-  <div class="pick" role="group" aria-label="比べる写真">${ph.map(p => `<button type="button" data-cmp="${p.day}" aria-pressed="${S.cmp.includes(p.day)}">DAY ${p.day}</button>`).join('')}</div>` : '<p style="padding:14px;color:var(--muted);font-size:13px">まだ写真がありません。最初の1枚を撮ってみましょう。</p>'}</div></section>
+  <div class="pick" role="group" aria-label="比べる写真">${ph.map(p => `<button type="button" data-cmp="${p.day}" aria-pressed="${S.cmp.includes(p.day)}">${wkLabel(p.day)}<small>DAY ${p.day}</small></button>`).join('')}</div>` : '<p style="padding:14px;color:var(--muted);font-size:13px">まだ写真がありません。最初の1枚を撮ってみましょう。</p>'}</div></section>
   ${ended ? '' : `<section class="sec"><div class="sec-h"><h2>写真を追加</h2><span class="aside">いつでも追加できます</span></div>
   <div class="card" style="padding-top:14px"><div class="two" style="padding:0 14px 14px">
     <div class="upload" style="margin:0"><b>正面</b><input type="file" id="ph-front" accept="image/*"><label for="ph-front">選ぶ</label></div>
@@ -876,12 +878,15 @@ document.addEventListener('change', async e => {
     if (!dataUrl) return;
     toast('写真を送っています…');
     try {
-      const due = photoDue();
-      const r = await api('uploadPhoto', { photo: { date: fmt(S.today), day: Math.max(S.day, 1), label: due ? due.l : '', side, dataUrl } });
+      const dd = Math.max(S.day, 1), list = photoPlan();
+      const hit = list.filter(x => x.d <= dd).pop();
+      const next = hit ? list[list.indexOf(hit) + 1] : null;
+      const label = wkLabel(dd) + (hit && (!next || dd < next.d) && dd - hit.d < 7 ? '（' + hit.l + '）' : '');
+      const r = await api('uploadPhoto', { photo: { date: fmt(S.today), day: dd, label, side, dataUrl } });
       let p = S.data.photos.find(x => x.date === fmt(S.today));
-      if (!p) { p = { date: fmt(S.today), day: Math.max(S.day, 1), label: due ? due.l : '', front: '', side: '' }; S.data.photos.push(p); }
+      if (!p) { p = { date: fmt(S.today), day: dd, label, front: '', side: '' }; S.data.photos.push(p); }
       p[side] = r.fileId; S.photoCache[r.fileId] = dataUrl; S.cmpSide = side; S.cmp = [S.cmp[0] ?? p.day, p.day].sort((a, b) => a - b);
-      toast('写真を保存しました'); route();
+      toast(wkLabel(dd) + 'の写真として保存しました'); route();
     } catch (err) { toast('写真を送れませんでした。もう一度お試しください'); }
   }
   if (el.id === 'meal-img' && el.files[0]) { const img = await resize(el.files[0], 1024); sendMeal($('#meal-txt') ? $('#meal-txt').value.trim() : '', img); }
