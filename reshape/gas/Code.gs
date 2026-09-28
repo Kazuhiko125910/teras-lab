@@ -19,10 +19,16 @@ const MEAL_MODEL = 'claude-haiku-4-5-20251001';
 const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // 運営用スプレッドシート Teras_Lab_RESHAPE
 const LIFF_URL = 'https://liff.line.me/2011731827-ZLDHlKTg';
 const MONTH_HEAD = ['会員ID', '名前', '期', '月', '見直し日', '目標1 中間', '目標2 中間', '目標3 中間', '目標1 実績', '目標2 実績', '目標3 実績', '達成数', 'うまくいったこと', 'うまくいかなかったこと', '来月の工夫', '記入日', 'LINE通知日'];
+// 目標の変更履歴（契約書 第5条：変更前後の目標と変更日を記録し、担当が確認して確定する）
+const GOAL_HEAD = ['会員ID', '名前', '変更日', '期', '目標1', '目標1 スタート', '目標1 目標値', '目標2', '目標2 スタート', '目標2 目標値', '目標3', '目標3 スタート', '目標3 目標値', '状態', '確認日', '担当メモ'];
+const GOAL_CHECK = ['確認待ち', '確定', '見直しをお願い', '面談で相談'];
+// 延長保証（契約書 第9条）の判定に使う会員シートの列
+const JUDGE_HEAD = ['目標の確認', '目標の確認日', '延長保証 測定日', '延長保証 測定値', '延長保証 記録週数', '延長保証 判定'];
 
 const SH = {
   member: '会員', record: '毎日の記録', photo: '姿勢写真', meal: '食事',
-  video: '動画マスター', lecture: '講義マスター', roadmap: '26週ロードマップ', daily: '毎日のストレッチ', month: '月の目標'
+  video: '動画マスター', lecture: '講義マスター', roadmap: '26週ロードマップ', daily: '毎日のストレッチ', month: '月の目標',
+  goalLog: '目標の履歴'
 };
 
 // ============ 入口 ============
@@ -37,11 +43,13 @@ function doPost(e) {
     const a = req.action;
     if (a === 'admin') return json_(adminData_(req));
     if (a === 'adminPhoto') return json_(adminPhoto_(req));
+    if (a === 'adminGoal') return json_(adminGoal_(req));
     const me = identify_(req); // {id, name, demo}
     if (a === 'boot') return json_(boot_(me, req));
     if (a === 'saveDay') return json_(saveDay_(me, req));
     if (a === 'saveGoal') return json_(saveGoal_(me, req));
     if (a === 'saveReview') return json_(saveReview_(me, req));
+    if (a === 'saveJudge') return json_(saveJudge_(me, req));
     if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
     if (a === 'getPhoto') return json_(getPhoto_(me, req));
     if (a === 'deletePhoto') return json_(deletePhoto_(me, req));
@@ -98,6 +106,7 @@ function boot_(me, req) {
     records: table_(SH.record).rows.filter(r => String(r['会員ID']) === me.id).map(recordOut_),
     photos: table_(SH.photo).rows.filter(r => String(r['会員ID']) === me.id).map(photoOut_),
     months: monthsOf_(me.id),
+    goalLog: goalLogOf_(me.id),
     content: content_()
   };
 }
@@ -122,8 +131,63 @@ function memberOut_(r) {
       targets: goals
     },
     fields: String(r['毎日の記録項目'] || ''),
-    goalCycle: num_(r['目標の期']) || (goals.length ? 1 : 0)
+    goalCycle: num_(r['目標の期']) || (goals.length ? 1 : 0),
+    goalCheck: String(r['目標の確認'] || ''), goalCheckAt: fmtDate_(r['目標の確認日']),
+    judge: {
+      at: fmtDate_(r['延長保証 測定日']), values: String(r['延長保証 測定値'] || ''),
+      weeks: String(r['延長保証 記録週数'] || ''), result: String(r['延長保証 判定'] || '')
+    }
   };
+}
+
+// 目標の変更履歴（新しい順ではなく、古い順で返す）
+function goalLogOut_(r) {
+  return {
+    date: fmtDate_(r['変更日']), cycle: num_(r['期']) || 1,
+    targets: [1, 2, 3].map(i => ({ label: String(r['目標' + i] || ''), start: num_(r['目標' + i + ' スタート']), target: num_(r['目標' + i + ' 目標値']) })).filter(t => t.label),
+    status: String(r['状態'] || ''), checkedAt: fmtDate_(r['確認日']), memo: String(r['担当メモ'] || ''), _row: r._row
+  };
+}
+function goalLogOf_(id) {
+  return table_(SH.goalLog).rows.filter(r => String(r['会員ID']) === id && r['変更日']).map(goalLogOut_)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a._row - b._row)).map(x => { delete x._row; return x; });
+}
+
+// ---------- 受講期間と延長保証 ----------
+// 受講期間の終わり：支払日から6ヶ月（VIPで延長保証を受けた場合は9ヶ月）
+function courseEnd_(r) {
+  let e = parseYmd_(fmtDate_(r['6ヶ月の日（支払日から）']));
+  if (!e) { const st = parseYmd_(fmtDate_(r['開始日（DAY1）'])); if (st) e = new Date(st.getTime() + 181 * 864e5); }
+  if (e && String(r['プラン'] || '') === 'VIP' && /延長する/.test(String(r['延長希望'] || ''))) e = addMonths_(e, 3);
+  return e;
+}
+// 受講期間が終わり、卒業生コミュニティにも参加していない（＝会員サイトの利用を終了する）
+function courseOver_(r) {
+  const s = String(r['利用'] || '');
+  if (s === '卒業生') return false;
+  if (s === '終了') return true;
+  const e = courseEnd_(r);
+  return !!(e && ymd_(e) < ymd_(new Date()));
+}
+// 延長保証の「記録した日」：ストレッチかトレーニングを実施し、その日のうちに保存した日（契約書 第9条第2項）
+function countable_(r) {
+  if (!(r['ストレッチ①'] || r['ストレッチ②'] || r['トレーニング'])) return false;
+  const saved = String(r['保存日時'] || '');
+  return !saved || saved.slice(0, 10) === fmtDate_(r['日付']);
+}
+// 判定期間のうち、週3日以上の記録があった週の数
+function recordWeeks_(m, recRows) {
+  const vip = String(m['プラン'] || '') === 'VIP', total = vip ? 26 : 13, need = vip ? 22 : 11;
+  const st = parseYmd_(fmtDate_(m['開始日（DAY1）']));
+  const cnt = {};
+  if (st) recRows.forEach(r => {
+    if (String(r['会員ID']) !== String(m['会員ID']) || !countable_(r)) return;
+    const d = parseYmd_(fmtDate_(r['日付'])); if (!d) return;
+    const w = Math.ceil((Math.round((d - st) / 864e5) + 1) / 7);
+    if (w >= 1 && w <= total) cnt[w] = (cnt[w] || 0) + 1;
+  });
+  let ok = 0; for (let w = 1; w <= total; w++) if ((cnt[w] || 0) >= 3) ok++;
+  return { ok: ok, total: total, need: need };
 }
 
 function monthOut_(r) {
@@ -210,8 +274,12 @@ function content_() {
 // ============ 保存 ============
 function saveDay_(me, req) {
   const d = req.data || {};
-  const date = String(d.date || fmtDate_(new Date()));
+  const today = fmtDate_(new Date());
+  const date = String(d.date || today);
+  // 記録はその日のうちに保存したものだけ（契約書 第9条第2項）。日付をまたいで開いたままの画面からは保存しない
+  if (!me.demo && date !== today) throw new Error('date_changed');
   const m = findMember_(me.id);
+  if (m && courseOver_(m)) throw new Error('course_over');
   const row = {
     '日付': date, '会員ID': me.id, '名前': m ? m['名前'] : '', 'DAY': d.day || '', '週': d.week || '',
     'ストレッチ①': d.s1 || '', 'ストレッチ②': d.s2 || '', 'トレーニング': (d.train || []).join('・'),
@@ -228,6 +296,12 @@ function saveDay_(me, req) {
 function saveGoal_(me, req) {
   const g = req.goal || {};
   const t = g.targets || [];
+  const before = findMember_(me.id);
+  if (!before) throw new Error('member_not_found');
+  const key = arr => JSON.stringify(arr.map(x => [String(x.label || ''), x.start === '' || x.start == null ? null : Number(x.start), x.target === '' || x.target == null ? null : Number(x.target)]));
+  const oldKey = key([1, 2, 3].map(i => ({ label: before['卒業目標' + i], start: before['目標' + i + ' スタート'], target: before['目標' + i + ' 目標値'] })).filter(x => x.label));
+  const newKey = key(t.slice(0, 3));
+  const changed = oldKey !== newKey || (Number(g.cycle) || 1) !== (Number(before['目標の期']) || 1);
   const upd = {
     '6ヶ月後の理想の場面（MY GOAL）': g.scene || '', 'お悩み': g.needs || '', '一番解決したいこと': g.top || '',
     '変わりたい理由': g.why || '', 'このままだと1年後': g.ifnot || '', 'やる時間・場所': g.when || '', 'つまずき対策': g.plan || '',
@@ -238,9 +312,21 @@ function saveGoal_(me, req) {
     upd['目標' + (i + 1) + ' スタート'] = t[i] ? t[i].start : '';
     upd['目標' + (i + 1) + ' 目標値'] = t[i] ? t[i].target : '';
   }
-  ensureHeaders_(SH.member, ['目標の期']);
+  ensureHeaders_(SH.member, ['目標の期'].concat(JUDGE_HEAD));
+  // 数値目標が変わったときは、担当の確認が済むまで「確認待ち」にして、変更履歴に残す（契約書 第5条第5項〜第7項）
+  if (changed) { upd['目標の確認'] = '確認待ち'; upd['目標の確認日'] = ''; }
   const ok = updateMember_(me.id, upd);
   if (!ok) throw new Error('member_not_found');
+  if (changed) {
+    ensureHeaders_(SH.goalLog, GOAL_HEAD);
+    const log = { '会員ID': me.id, '名前': before['名前'] || '', '変更日': fmtDate_(new Date()), '期': Number(g.cycle) || 1, '状態': '確認待ち' };
+    for (let i = 0; i < 3; i++) {
+      log['目標' + (i + 1)] = t[i] ? t[i].label : '';
+      log['目標' + (i + 1) + ' スタート'] = t[i] ? t[i].start : '';
+      log['目標' + (i + 1) + ' 目標値'] = t[i] ? t[i].target : '';
+    }
+    appendRow_(SH.goalLog, log);
+  }
   // 毎月の中間目標
   const ms = Array.isArray(g.milestones) ? g.milestones : [];
   if (ms.length) {
@@ -253,7 +339,8 @@ function saveGoal_(me, req) {
       upsert_(SH.month, r => String(r['会員ID']) === me.id && Number(r['月']) === n && !r['記入日'], row);
     });
   }
-  return { ok: true, months: monthsOf_(me.id) };
+  const after = findMember_(me.id);
+  return { ok: true, months: monthsOf_(me.id), goalLog: goalLogOf_(me.id), goalCheck: String(after['目標の確認'] || ''), goalCheckAt: fmtDate_(after['目標の確認日']) };
 }
 
 function saveReview_(me, req) {
@@ -280,6 +367,35 @@ function saveReview_(me, req) {
   return { ok: true, months: monthsOf_(me.id) };
 }
 
+// ============ 延長保証の測定と判定（契約書 第9条） ============
+// 判定期間（STANDARD 13週・VIP 26週）の終了日から7日以内に、受講開始時と同じ方法で測った数値を入力してもらう
+function saveJudge_(me, req) {
+  const m = findMember_(me.id); if (!m) throw new Error('member_not_found');
+  const vip = String(m['プラン'] || '') === 'VIP', total = vip ? 26 : 13;
+  const st = parseYmd_(fmtDate_(m['開始日（DAY1）'])); if (!st) throw new Error('not_started');
+  const today = parseYmd_(fmtDate_(new Date()));
+  const day = Math.round((today - st) / 864e5) + 1;
+  if (!me.demo && (day < total * 7 || day > total * 7 + 7)) throw new Error('judge_closed');
+  const vals = (Array.isArray(req.values) ? req.values : []).slice(0, 3).map(v => v === '' || v == null || isNaN(Number(v)) ? null : Number(v));
+  if (vals.every(v => v == null)) throw new Error('no_values');
+  // 判定に使う目標：判定期間の終了日の4週間前までに確定していたもの（なければ現在の目標）
+  const cutoff = ymd_(new Date(st.getTime() + (total * 7 - 1 - 28) * 864e5));
+  const confirmed = goalLogOf_(me.id).filter(x => x.status === '確定' && (x.checkedAt || x.date) <= cutoff);
+  const cur = [1, 2, 3].map(i => ({ label: String(m['卒業目標' + i] || ''), start: num_(m['目標' + i + ' スタート']), target: num_(m['目標' + i + ' 目標値']) })).filter(t => t.label);
+  const goals = confirmed.length ? confirmed[confirmed.length - 1].targets : cur;
+  const hit = goals.filter((t, i) => vals[i] != null && t.start != null && t.target != null && (t.target < t.start ? vals[i] <= t.target : vals[i] >= t.target)).length;
+  const w = recordWeeks_(m, table_(SH.record).rows);
+  const result = w.ok < w.need ? '対象外（記録の週数が不足）' : hit >= 2 ? '対象外（卒業目標を達成）' : '対象（延長の手続きをする）';
+  ensureHeaders_(SH.member, JUDGE_HEAD);
+  updateMember_(me.id, {
+    '延長保証 測定日': fmtDate_(new Date()),
+    '延長保証 測定値': goals.map((t, i) => t.label + '：' + (vals[i] == null ? '—' : vals[i]) + '（目標 ' + (t.target == null ? '—' : t.target) + '）').join('／'),
+    '延長保証 記録週数': w.ok + '/' + w.total + '週（条件 ' + w.need + '週以上）',
+    '延長保証 判定': result
+  });
+  return { ok: true, at: fmtDate_(new Date()) };
+}
+
 // ============ 毎月の見直しリマインド（毎朝9時に自動実行） ============
 function ymd_(d) { return d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2); }
 function parseYmd_(s) { const m = String(s || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
@@ -297,6 +413,7 @@ function monthlyReminder() {
   table_(SH.member).rows.forEach(r => {
     const id = String(r['会員ID'] || '');
     if (!id || /^SAMPLE-/.test(id) || !/^(利用中|卒業生)$/.test(String(r['利用'] || ''))) return;
+    if (courseOver_(r)) return; // 受講期間が終わり、卒業生コミュニティに参加していない人には送らない
     const st = parseYmd_(fmtDate_(r['開始日（DAY1）'])); if (!st) return;
     let n = 0; while (n < 120 && ymd_(addMonths_(st, n + 1)) <= today) n++;
     if (n < 1) return;
@@ -397,8 +514,11 @@ function thumb_(id) {
 function meal_(me, req) {
   const key = prop_('ANTHROPIC_API_KEY');
   const m = findMember_(me.id);
+  if (!m || String(m['利用'] || '') === '停止' || courseOver_(m)) throw new Error('course_over');
   const text = String(req.text || '').slice(0, 800);
-  const img = m && String(m['プラン'] || '') === 'VIP' ? String(req.image || '') : ''; // 写真はVIPだけ
+  // 食事写真はVIPと卒業生コミュニティの人だけ（契約書 別紙1・第10条）
+  const photoOk = String(m['プラン'] || '') === 'VIP' || String(m['利用'] || '') === '卒業生';
+  const img = photoOk ? String(req.image || '') : '';
   let reply;
   if (!key) {
     reply = '（食事サポートの準備中です。もうしばらくお待ちください）';
@@ -447,15 +567,41 @@ function checkAdmin_(req) {
 function adminData_(req) {
   checkAdmin_(req);
   const recs = table_(SH.record).rows, photos = table_(SH.photo).rows, monthRows = table_(SH.month).rows;
+  const logs = table_(SH.goalLog).rows;
   const today = fmtDate_(new Date());
   const members = table_(SH.member).rows.filter(r => r['会員ID']).map(r => {
     const m = memberOut_(r);
     const mine = recs.filter(x => String(x['会員ID']) === m.id).map(recordOut_);
     const ph = photos.filter(x => String(x['会員ID']) === m.id).map(photoOut_);
     const mo = monthRows.filter(x => String(x['会員ID']) === m.id && num_(x['月'])).map(monthOut_).sort((a, b) => a.n - b.n);
-    return { member: m, records: mine.slice(-60), photos: ph, months: mo };
+    const gl = logs.filter(x => String(x['会員ID']) === m.id && x['変更日']).map(goalLogOut_).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a._row - b._row)).map(x => { delete x._row; return x; });
+    const ce = courseEnd_(r);
+    return { member: m, records: mine.slice(-60), photos: ph, months: mo, goalLog: gl, weeks: recordWeeks_(r, recs), courseEnd: ce ? ymd_(ce) : '', courseOver: courseOver_(r) };
   });
   return { ok: true, today: today, members: members, sheetUrl: ss_().getUrl() };
+}
+
+// 目標の確認（確定・見直しをお願い・面談で相談）を管理者ページから記録する
+function adminGoal_(req) {
+  checkAdmin_(req);
+  const id = String(req.id || ''), status = String(req.status || ''), memo = String(req.memo || '').slice(0, 300);
+  if (GOAL_CHECK.indexOf(status) < 0) throw new Error('bad_status');
+  if (!findMember_(id)) throw new Error('member_not_found');
+  ensureHeaders_(SH.member, JUDGE_HEAD);
+  const upd = { '目標の確認': status, '目標の確認日': fmtDate_(new Date()) };
+  if (memo) upd['担当からのひとこと'] = memo;
+  updateMember_(id, upd);
+  // 変更履歴のいちばん新しい行にも、確認の結果を書く
+  ensureHeaders_(SH.goalLog, GOAL_HEAD);
+  const t = table_(SH.goalLog);
+  const mine = t.rows.filter(r => String(r['会員ID']) === id && r['変更日']);
+  const last = mine[mine.length - 1];
+  if (last) {
+    t.sheet.getRange(last._row, t.col['状態'] + 1).setValue(status);
+    t.sheet.getRange(last._row, t.col['確認日'] + 1).setValue(fmtDate_(new Date()));
+    if (memo) t.sheet.getRange(last._row, t.col['担当メモ'] + 1).setValue(memo);
+  }
+  return { ok: true };
 }
 
 function adminPhoto_(req) {
@@ -469,6 +615,8 @@ function setup() {
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '：' + e.message); } };
   step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('見出しの追加', () => {
+    ensureHeaders_(SH.member, ['目標の期'].concat(JUDGE_HEAD));
+    ensureHeaders_(SH.goalLog, GOAL_HEAD);
     ensureHeaders_(SH.record, ['日付', '会員ID', '名前', 'DAY', '週', 'ストレッチ①', 'ストレッチ②', 'トレーニング', '見た動画', '鏡チェック', '記録1', '記録2', '記録3', 'ひとこと', '保存日時', '目標1 いま', '目標2 いま', '目標3 いま']);
     ensureHeaders_(SH.photo, ['撮影日', '会員ID', '名前', 'DAY', 'タイミング', '正面の写真', '横向きの写真', '担当コメント']);
     ensureHeaders_(SH.meal, ['日時', '会員ID', '名前', '送った内容', '写真', '自動返信', '担当フィードバック（VIP）']);
@@ -478,12 +626,13 @@ function setup() {
     const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
     const put = (h, list) => { if (t.col[h] !== undefined) ms.getRange(2, t.col[h] + 1, 500, 1).setDataValidation(dv(list)); };
     put('プラン', ['STANDARD', 'VIP']);
-    put('利用', ['承認待ち', '利用中', '卒業生', '停止']);
+    put('利用', ['承認待ち', '利用中', '卒業生', '終了', '停止']);
     put('延長希望', ['延長する', '延長しない', '未確認']);
     put('卒業生コミュニティ参加希望', ['参加する', '参加しない', '未確認']);
+    put('目標の確認', GOAL_CHECK);
     ms.setFrozenColumns(2);
   });
-  step('見出しの固定と色', () => [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); if (!s) return; s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); }));
+  step('見出しの固定と色', () => [SH.member, SH.record, SH.photo, SH.meal, SH.goalLog].forEach(n => { const s = ss.getSheetByName(n); if (!s) return; s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); }));
   step('毎日のストレッチ タブ', () => {
     if (ss.getSheetByName(SH.daily)) return;
     const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);

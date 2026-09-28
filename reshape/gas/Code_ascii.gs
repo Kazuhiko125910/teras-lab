@@ -19,10 +19,16 @@ const MEAL_MODEL = 'claude-haiku-4-5-20251001';
 const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // \u904b\u55b6\u7528\u30b9\u30d7\u30ec\u30c3\u30c9\u30b7\u30fc\u30c8 Teras_Lab_RESHAPE
 const LIFF_URL = 'https://liff.line.me/2011731827-ZLDHlKTg';
 const MONTH_HEAD = ['\u4f1a\u54e1ID', '\u540d\u524d', '\u671f', '\u6708', '\u898b\u76f4\u3057\u65e5', '\u76ee\u6a191 \u4e2d\u9593', '\u76ee\u6a192 \u4e2d\u9593', '\u76ee\u6a193 \u4e2d\u9593', '\u76ee\u6a191 \u5b9f\u7e3e', '\u76ee\u6a192 \u5b9f\u7e3e', '\u76ee\u6a193 \u5b9f\u7e3e', '\u9054\u6210\u6570', '\u3046\u307e\u304f\u3044\u3063\u305f\u3053\u3068', '\u3046\u307e\u304f\u3044\u304b\u306a\u304b\u3063\u305f\u3053\u3068', '\u6765\u6708\u306e\u5de5\u592b', '\u8a18\u5165\u65e5', 'LINE\u901a\u77e5\u65e5'];
+// \u76ee\u6a19\u306e\u5909\u66f4\u5c65\u6b74\uff08\u5951\u7d04\u66f8 \u7b2c5\u6761\uff1a\u5909\u66f4\u524d\u5f8c\u306e\u76ee\u6a19\u3068\u5909\u66f4\u65e5\u3092\u8a18\u9332\u3057\u3001\u62c5\u5f53\u304c\u78ba\u8a8d\u3057\u3066\u78ba\u5b9a\u3059\u308b\uff09
+const GOAL_HEAD = ['\u4f1a\u54e1ID', '\u540d\u524d', '\u5909\u66f4\u65e5', '\u671f', '\u76ee\u6a191', '\u76ee\u6a191 \u30b9\u30bf\u30fc\u30c8', '\u76ee\u6a191 \u76ee\u6a19\u5024', '\u76ee\u6a192', '\u76ee\u6a192 \u30b9\u30bf\u30fc\u30c8', '\u76ee\u6a192 \u76ee\u6a19\u5024', '\u76ee\u6a193', '\u76ee\u6a193 \u30b9\u30bf\u30fc\u30c8', '\u76ee\u6a193 \u76ee\u6a19\u5024', '\u72b6\u614b', '\u78ba\u8a8d\u65e5', '\u62c5\u5f53\u30e1\u30e2'];
+const GOAL_CHECK = ['\u78ba\u8a8d\u5f85\u3061', '\u78ba\u5b9a', '\u898b\u76f4\u3057\u3092\u304a\u9858\u3044', '\u9762\u8ac7\u3067\u76f8\u8ac7'];
+// \u5ef6\u9577\u4fdd\u8a3c\uff08\u5951\u7d04\u66f8 \u7b2c9\u6761\uff09\u306e\u5224\u5b9a\u306b\u4f7f\u3046\u4f1a\u54e1\u30b7\u30fc\u30c8\u306e\u5217
+const JUDGE_HEAD = ['\u76ee\u6a19\u306e\u78ba\u8a8d', '\u76ee\u6a19\u306e\u78ba\u8a8d\u65e5', '\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u65e5', '\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u5024', '\u5ef6\u9577\u4fdd\u8a3c \u8a18\u9332\u9031\u6570', '\u5ef6\u9577\u4fdd\u8a3c \u5224\u5b9a'];
 
 const SH = {
   member: '\u4f1a\u54e1', record: '\u6bce\u65e5\u306e\u8a18\u9332', photo: '\u59ff\u52e2\u5199\u771f', meal: '\u98df\u4e8b',
-  video: '\u52d5\u753b\u30de\u30b9\u30bf\u30fc', lecture: '\u8b1b\u7fa9\u30de\u30b9\u30bf\u30fc', roadmap: '26\u9031\u30ed\u30fc\u30c9\u30de\u30c3\u30d7', daily: '\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1', month: '\u6708\u306e\u76ee\u6a19'
+  video: '\u52d5\u753b\u30de\u30b9\u30bf\u30fc', lecture: '\u8b1b\u7fa9\u30de\u30b9\u30bf\u30fc', roadmap: '26\u9031\u30ed\u30fc\u30c9\u30de\u30c3\u30d7', daily: '\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1', month: '\u6708\u306e\u76ee\u6a19',
+  goalLog: '\u76ee\u6a19\u306e\u5c65\u6b74'
 };
 
 // ============ \u5165\u53e3 ============
@@ -37,11 +43,13 @@ function doPost(e) {
     const a = req.action;
     if (a === 'admin') return json_(adminData_(req));
     if (a === 'adminPhoto') return json_(adminPhoto_(req));
+    if (a === 'adminGoal') return json_(adminGoal_(req));
     const me = identify_(req); // {id, name, demo}
     if (a === 'boot') return json_(boot_(me, req));
     if (a === 'saveDay') return json_(saveDay_(me, req));
     if (a === 'saveGoal') return json_(saveGoal_(me, req));
     if (a === 'saveReview') return json_(saveReview_(me, req));
+    if (a === 'saveJudge') return json_(saveJudge_(me, req));
     if (a === 'uploadPhoto') return json_(uploadPhoto_(me, req));
     if (a === 'getPhoto') return json_(getPhoto_(me, req));
     if (a === 'deletePhoto') return json_(deletePhoto_(me, req));
@@ -98,6 +106,7 @@ function boot_(me, req) {
     records: table_(SH.record).rows.filter(r => String(r['\u4f1a\u54e1ID']) === me.id).map(recordOut_),
     photos: table_(SH.photo).rows.filter(r => String(r['\u4f1a\u54e1ID']) === me.id).map(photoOut_),
     months: monthsOf_(me.id),
+    goalLog: goalLogOf_(me.id),
     content: content_()
   };
 }
@@ -122,8 +131,63 @@ function memberOut_(r) {
       targets: goals
     },
     fields: String(r['\u6bce\u65e5\u306e\u8a18\u9332\u9805\u76ee'] || ''),
-    goalCycle: num_(r['\u76ee\u6a19\u306e\u671f']) || (goals.length ? 1 : 0)
+    goalCycle: num_(r['\u76ee\u6a19\u306e\u671f']) || (goals.length ? 1 : 0),
+    goalCheck: String(r['\u76ee\u6a19\u306e\u78ba\u8a8d'] || ''), goalCheckAt: fmtDate_(r['\u76ee\u6a19\u306e\u78ba\u8a8d\u65e5']),
+    judge: {
+      at: fmtDate_(r['\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u65e5']), values: String(r['\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u5024'] || ''),
+      weeks: String(r['\u5ef6\u9577\u4fdd\u8a3c \u8a18\u9332\u9031\u6570'] || ''), result: String(r['\u5ef6\u9577\u4fdd\u8a3c \u5224\u5b9a'] || '')
+    }
   };
+}
+
+// \u76ee\u6a19\u306e\u5909\u66f4\u5c65\u6b74\uff08\u65b0\u3057\u3044\u9806\u3067\u306f\u306a\u304f\u3001\u53e4\u3044\u9806\u3067\u8fd4\u3059\uff09
+function goalLogOut_(r) {
+  return {
+    date: fmtDate_(r['\u5909\u66f4\u65e5']), cycle: num_(r['\u671f']) || 1,
+    targets: [1, 2, 3].map(i => ({ label: String(r['\u76ee\u6a19' + i] || ''), start: num_(r['\u76ee\u6a19' + i + ' \u30b9\u30bf\u30fc\u30c8']), target: num_(r['\u76ee\u6a19' + i + ' \u76ee\u6a19\u5024']) })).filter(t => t.label),
+    status: String(r['\u72b6\u614b'] || ''), checkedAt: fmtDate_(r['\u78ba\u8a8d\u65e5']), memo: String(r['\u62c5\u5f53\u30e1\u30e2'] || ''), _row: r._row
+  };
+}
+function goalLogOf_(id) {
+  return table_(SH.goalLog).rows.filter(r => String(r['\u4f1a\u54e1ID']) === id && r['\u5909\u66f4\u65e5']).map(goalLogOut_)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a._row - b._row)).map(x => { delete x._row; return x; });
+}
+
+// ---------- \u53d7\u8b1b\u671f\u9593\u3068\u5ef6\u9577\u4fdd\u8a3c ----------
+// \u53d7\u8b1b\u671f\u9593\u306e\u7d42\u308f\u308a\uff1a\u652f\u6255\u65e5\u304b\u30896\u30f6\u6708\uff08VIP\u3067\u5ef6\u9577\u4fdd\u8a3c\u3092\u53d7\u3051\u305f\u5834\u5408\u306f9\u30f6\u6708\uff09
+function courseEnd_(r) {
+  let e = parseYmd_(fmtDate_(r['6\u30f6\u6708\u306e\u65e5\uff08\u652f\u6255\u65e5\u304b\u3089\uff09']));
+  if (!e) { const st = parseYmd_(fmtDate_(r['\u958b\u59cb\u65e5\uff08DAY1\uff09'])); if (st) e = new Date(st.getTime() + 181 * 864e5); }
+  if (e && String(r['\u30d7\u30e9\u30f3'] || '') === 'VIP' && /\u5ef6\u9577\u3059\u308b/.test(String(r['\u5ef6\u9577\u5e0c\u671b'] || ''))) e = addMonths_(e, 3);
+  return e;
+}
+// \u53d7\u8b1b\u671f\u9593\u304c\u7d42\u308f\u308a\u3001\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u306b\u3082\u53c2\u52a0\u3057\u3066\u3044\u306a\u3044\uff08\uff1d\u4f1a\u54e1\u30b5\u30a4\u30c8\u306e\u5229\u7528\u3092\u7d42\u4e86\u3059\u308b\uff09
+function courseOver_(r) {
+  const s = String(r['\u5229\u7528'] || '');
+  if (s === '\u5352\u696d\u751f') return false;
+  if (s === '\u7d42\u4e86') return true;
+  const e = courseEnd_(r);
+  return !!(e && ymd_(e) < ymd_(new Date()));
+}
+// \u5ef6\u9577\u4fdd\u8a3c\u306e\u300c\u8a18\u9332\u3057\u305f\u65e5\u300d\uff1a\u30b9\u30c8\u30ec\u30c3\u30c1\u304b\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0\u3092\u5b9f\u65bd\u3057\u3001\u305d\u306e\u65e5\u306e\u3046\u3061\u306b\u4fdd\u5b58\u3057\u305f\u65e5\uff08\u5951\u7d04\u66f8 \u7b2c9\u6761\u7b2c2\u9805\uff09
+function countable_(r) {
+  if (!(r['\u30b9\u30c8\u30ec\u30c3\u30c1\u2460'] || r['\u30b9\u30c8\u30ec\u30c3\u30c1\u2461'] || r['\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0'])) return false;
+  const saved = String(r['\u4fdd\u5b58\u65e5\u6642'] || '');
+  return !saved || saved.slice(0, 10) === fmtDate_(r['\u65e5\u4ed8']);
+}
+// \u5224\u5b9a\u671f\u9593\u306e\u3046\u3061\u3001\u90313\u65e5\u4ee5\u4e0a\u306e\u8a18\u9332\u304c\u3042\u3063\u305f\u9031\u306e\u6570
+function recordWeeks_(m, recRows) {
+  const vip = String(m['\u30d7\u30e9\u30f3'] || '') === 'VIP', total = vip ? 26 : 13, need = vip ? 22 : 11;
+  const st = parseYmd_(fmtDate_(m['\u958b\u59cb\u65e5\uff08DAY1\uff09']));
+  const cnt = {};
+  if (st) recRows.forEach(r => {
+    if (String(r['\u4f1a\u54e1ID']) !== String(m['\u4f1a\u54e1ID']) || !countable_(r)) return;
+    const d = parseYmd_(fmtDate_(r['\u65e5\u4ed8'])); if (!d) return;
+    const w = Math.ceil((Math.round((d - st) / 864e5) + 1) / 7);
+    if (w >= 1 && w <= total) cnt[w] = (cnt[w] || 0) + 1;
+  });
+  let ok = 0; for (let w = 1; w <= total; w++) if ((cnt[w] || 0) >= 3) ok++;
+  return { ok: ok, total: total, need: need };
 }
 
 function monthOut_(r) {
@@ -210,8 +274,12 @@ function content_() {
 // ============ \u4fdd\u5b58 ============
 function saveDay_(me, req) {
   const d = req.data || {};
-  const date = String(d.date || fmtDate_(new Date()));
+  const today = fmtDate_(new Date());
+  const date = String(d.date || today);
+  // \u8a18\u9332\u306f\u305d\u306e\u65e5\u306e\u3046\u3061\u306b\u4fdd\u5b58\u3057\u305f\u3082\u306e\u3060\u3051\uff08\u5951\u7d04\u66f8 \u7b2c9\u6761\u7b2c2\u9805\uff09\u3002\u65e5\u4ed8\u3092\u307e\u305f\u3044\u3067\u958b\u3044\u305f\u307e\u307e\u306e\u753b\u9762\u304b\u3089\u306f\u4fdd\u5b58\u3057\u306a\u3044
+  if (!me.demo && date !== today) throw new Error('date_changed');
   const m = findMember_(me.id);
+  if (m && courseOver_(m)) throw new Error('course_over');
   const row = {
     '\u65e5\u4ed8': date, '\u4f1a\u54e1ID': me.id, '\u540d\u524d': m ? m['\u540d\u524d'] : '', 'DAY': d.day || '', '\u9031': d.week || '',
     '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460': d.s1 || '', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461': d.s2 || '', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0': (d.train || []).join('\u30fb'),
@@ -228,6 +296,12 @@ function saveDay_(me, req) {
 function saveGoal_(me, req) {
   const g = req.goal || {};
   const t = g.targets || [];
+  const before = findMember_(me.id);
+  if (!before) throw new Error('member_not_found');
+  const key = arr => JSON.stringify(arr.map(x => [String(x.label || ''), x.start === '' || x.start == null ? null : Number(x.start), x.target === '' || x.target == null ? null : Number(x.target)]));
+  const oldKey = key([1, 2, 3].map(i => ({ label: before['\u5352\u696d\u76ee\u6a19' + i], start: before['\u76ee\u6a19' + i + ' \u30b9\u30bf\u30fc\u30c8'], target: before['\u76ee\u6a19' + i + ' \u76ee\u6a19\u5024'] })).filter(x => x.label));
+  const newKey = key(t.slice(0, 3));
+  const changed = oldKey !== newKey || (Number(g.cycle) || 1) !== (Number(before['\u76ee\u6a19\u306e\u671f']) || 1);
   const upd = {
     '6\u30f6\u6708\u5f8c\u306e\u7406\u60f3\u306e\u5834\u9762\uff08MY GOAL\uff09': g.scene || '', '\u304a\u60a9\u307f': g.needs || '', '\u4e00\u756a\u89e3\u6c7a\u3057\u305f\u3044\u3053\u3068': g.top || '',
     '\u5909\u308f\u308a\u305f\u3044\u7406\u7531': g.why || '', '\u3053\u306e\u307e\u307e\u3060\u30681\u5e74\u5f8c': g.ifnot || '', '\u3084\u308b\u6642\u9593\u30fb\u5834\u6240': g.when || '', '\u3064\u307e\u305a\u304d\u5bfe\u7b56': g.plan || '',
@@ -238,9 +312,21 @@ function saveGoal_(me, req) {
     upd['\u76ee\u6a19' + (i + 1) + ' \u30b9\u30bf\u30fc\u30c8'] = t[i] ? t[i].start : '';
     upd['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024'] = t[i] ? t[i].target : '';
   }
-  ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f']);
+  ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f'].concat(JUDGE_HEAD));
+  // \u6570\u5024\u76ee\u6a19\u304c\u5909\u308f\u3063\u305f\u3068\u304d\u306f\u3001\u62c5\u5f53\u306e\u78ba\u8a8d\u304c\u6e08\u3080\u307e\u3067\u300c\u78ba\u8a8d\u5f85\u3061\u300d\u306b\u3057\u3066\u3001\u5909\u66f4\u5c65\u6b74\u306b\u6b8b\u3059\uff08\u5951\u7d04\u66f8 \u7b2c5\u6761\u7b2c5\u9805\u301c\u7b2c7\u9805\uff09
+  if (changed) { upd['\u76ee\u6a19\u306e\u78ba\u8a8d'] = '\u78ba\u8a8d\u5f85\u3061'; upd['\u76ee\u6a19\u306e\u78ba\u8a8d\u65e5'] = ''; }
   const ok = updateMember_(me.id, upd);
   if (!ok) throw new Error('member_not_found');
+  if (changed) {
+    ensureHeaders_(SH.goalLog, GOAL_HEAD);
+    const log = { '\u4f1a\u54e1ID': me.id, '\u540d\u524d': before['\u540d\u524d'] || '', '\u5909\u66f4\u65e5': fmtDate_(new Date()), '\u671f': Number(g.cycle) || 1, '\u72b6\u614b': '\u78ba\u8a8d\u5f85\u3061' };
+    for (let i = 0; i < 3; i++) {
+      log['\u76ee\u6a19' + (i + 1)] = t[i] ? t[i].label : '';
+      log['\u76ee\u6a19' + (i + 1) + ' \u30b9\u30bf\u30fc\u30c8'] = t[i] ? t[i].start : '';
+      log['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024'] = t[i] ? t[i].target : '';
+    }
+    appendRow_(SH.goalLog, log);
+  }
   // \u6bce\u6708\u306e\u4e2d\u9593\u76ee\u6a19
   const ms = Array.isArray(g.milestones) ? g.milestones : [];
   if (ms.length) {
@@ -253,7 +339,8 @@ function saveGoal_(me, req) {
       upsert_(SH.month, r => String(r['\u4f1a\u54e1ID']) === me.id && Number(r['\u6708']) === n && !r['\u8a18\u5165\u65e5'], row);
     });
   }
-  return { ok: true, months: monthsOf_(me.id) };
+  const after = findMember_(me.id);
+  return { ok: true, months: monthsOf_(me.id), goalLog: goalLogOf_(me.id), goalCheck: String(after['\u76ee\u6a19\u306e\u78ba\u8a8d'] || ''), goalCheckAt: fmtDate_(after['\u76ee\u6a19\u306e\u78ba\u8a8d\u65e5']) };
 }
 
 function saveReview_(me, req) {
@@ -280,6 +367,35 @@ function saveReview_(me, req) {
   return { ok: true, months: monthsOf_(me.id) };
 }
 
+// ============ \u5ef6\u9577\u4fdd\u8a3c\u306e\u6e2c\u5b9a\u3068\u5224\u5b9a\uff08\u5951\u7d04\u66f8 \u7b2c9\u6761\uff09 ============
+// \u5224\u5b9a\u671f\u9593\uff08STANDARD 13\u9031\u30fbVIP 26\u9031\uff09\u306e\u7d42\u4e86\u65e5\u304b\u30897\u65e5\u4ee5\u5185\u306b\u3001\u53d7\u8b1b\u958b\u59cb\u6642\u3068\u540c\u3058\u65b9\u6cd5\u3067\u6e2c\u3063\u305f\u6570\u5024\u3092\u5165\u529b\u3057\u3066\u3082\u3089\u3046
+function saveJudge_(me, req) {
+  const m = findMember_(me.id); if (!m) throw new Error('member_not_found');
+  const vip = String(m['\u30d7\u30e9\u30f3'] || '') === 'VIP', total = vip ? 26 : 13;
+  const st = parseYmd_(fmtDate_(m['\u958b\u59cb\u65e5\uff08DAY1\uff09'])); if (!st) throw new Error('not_started');
+  const today = parseYmd_(fmtDate_(new Date()));
+  const day = Math.round((today - st) / 864e5) + 1;
+  if (!me.demo && (day < total * 7 || day > total * 7 + 7)) throw new Error('judge_closed');
+  const vals = (Array.isArray(req.values) ? req.values : []).slice(0, 3).map(v => v === '' || v == null || isNaN(Number(v)) ? null : Number(v));
+  if (vals.every(v => v == null)) throw new Error('no_values');
+  // \u5224\u5b9a\u306b\u4f7f\u3046\u76ee\u6a19\uff1a\u5224\u5b9a\u671f\u9593\u306e\u7d42\u4e86\u65e5\u306e4\u9031\u9593\u524d\u307e\u3067\u306b\u78ba\u5b9a\u3057\u3066\u3044\u305f\u3082\u306e\uff08\u306a\u3051\u308c\u3070\u73fe\u5728\u306e\u76ee\u6a19\uff09
+  const cutoff = ymd_(new Date(st.getTime() + (total * 7 - 1 - 28) * 864e5));
+  const confirmed = goalLogOf_(me.id).filter(x => x.status === '\u78ba\u5b9a' && (x.checkedAt || x.date) <= cutoff);
+  const cur = [1, 2, 3].map(i => ({ label: String(m['\u5352\u696d\u76ee\u6a19' + i] || ''), start: num_(m['\u76ee\u6a19' + i + ' \u30b9\u30bf\u30fc\u30c8']), target: num_(m['\u76ee\u6a19' + i + ' \u76ee\u6a19\u5024']) })).filter(t => t.label);
+  const goals = confirmed.length ? confirmed[confirmed.length - 1].targets : cur;
+  const hit = goals.filter((t, i) => vals[i] != null && t.start != null && t.target != null && (t.target < t.start ? vals[i] <= t.target : vals[i] >= t.target)).length;
+  const w = recordWeeks_(m, table_(SH.record).rows);
+  const result = w.ok < w.need ? '\u5bfe\u8c61\u5916\uff08\u8a18\u9332\u306e\u9031\u6570\u304c\u4e0d\u8db3\uff09' : hit >= 2 ? '\u5bfe\u8c61\u5916\uff08\u5352\u696d\u76ee\u6a19\u3092\u9054\u6210\uff09' : '\u5bfe\u8c61\uff08\u5ef6\u9577\u306e\u624b\u7d9a\u304d\u3092\u3059\u308b\uff09';
+  ensureHeaders_(SH.member, JUDGE_HEAD);
+  updateMember_(me.id, {
+    '\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u65e5': fmtDate_(new Date()),
+    '\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u5024': goals.map((t, i) => t.label + '\uff1a' + (vals[i] == null ? '\u2014' : vals[i]) + '\uff08\u76ee\u6a19 ' + (t.target == null ? '\u2014' : t.target) + '\uff09').join('\uff0f'),
+    '\u5ef6\u9577\u4fdd\u8a3c \u8a18\u9332\u9031\u6570': w.ok + '/' + w.total + '\u9031\uff08\u6761\u4ef6 ' + w.need + '\u9031\u4ee5\u4e0a\uff09',
+    '\u5ef6\u9577\u4fdd\u8a3c \u5224\u5b9a': result
+  });
+  return { ok: true, at: fmtDate_(new Date()) };
+}
+
 // ============ \u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff08\u6bce\u671d9\u6642\u306b\u81ea\u52d5\u5b9f\u884c\uff09 ============
 function ymd_(d) { return d.getFullYear() + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2); }
 function parseYmd_(s) { const m = String(s || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
@@ -297,6 +413,7 @@ function monthlyReminder() {
   table_(SH.member).rows.forEach(r => {
     const id = String(r['\u4f1a\u54e1ID'] || '');
     if (!id || /^SAMPLE-/.test(id) || !/^(\u5229\u7528\u4e2d|\u5352\u696d\u751f)$/.test(String(r['\u5229\u7528'] || ''))) return;
+    if (courseOver_(r)) return; // \u53d7\u8b1b\u671f\u9593\u304c\u7d42\u308f\u308a\u3001\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u306b\u53c2\u52a0\u3057\u3066\u3044\u306a\u3044\u4eba\u306b\u306f\u9001\u3089\u306a\u3044
     const st = parseYmd_(fmtDate_(r['\u958b\u59cb\u65e5\uff08DAY1\uff09'])); if (!st) return;
     let n = 0; while (n < 120 && ymd_(addMonths_(st, n + 1)) <= today) n++;
     if (n < 1) return;
@@ -397,8 +514,11 @@ function thumb_(id) {
 function meal_(me, req) {
   const key = prop_('ANTHROPIC_API_KEY');
   const m = findMember_(me.id);
+  if (!m || String(m['\u5229\u7528'] || '') === '\u505c\u6b62' || courseOver_(m)) throw new Error('course_over');
   const text = String(req.text || '').slice(0, 800);
-  const img = m && String(m['\u30d7\u30e9\u30f3'] || '') === 'VIP' ? String(req.image || '') : ''; // \u5199\u771f\u306fVIP\u3060\u3051
+  // \u98df\u4e8b\u5199\u771f\u306fVIP\u3068\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u306e\u4eba\u3060\u3051\uff08\u5951\u7d04\u66f8 \u5225\u7d191\u30fb\u7b2c10\u6761\uff09
+  const photoOk = String(m['\u30d7\u30e9\u30f3'] || '') === 'VIP' || String(m['\u5229\u7528'] || '') === '\u5352\u696d\u751f';
+  const img = photoOk ? String(req.image || '') : '';
   let reply;
   if (!key) {
     reply = '\uff08\u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u306e\u6e96\u5099\u4e2d\u3067\u3059\u3002\u3082\u3046\u3057\u3070\u3089\u304f\u304a\u5f85\u3061\u304f\u3060\u3055\u3044\uff09';
@@ -447,15 +567,41 @@ function checkAdmin_(req) {
 function adminData_(req) {
   checkAdmin_(req);
   const recs = table_(SH.record).rows, photos = table_(SH.photo).rows, monthRows = table_(SH.month).rows;
+  const logs = table_(SH.goalLog).rows;
   const today = fmtDate_(new Date());
   const members = table_(SH.member).rows.filter(r => r['\u4f1a\u54e1ID']).map(r => {
     const m = memberOut_(r);
     const mine = recs.filter(x => String(x['\u4f1a\u54e1ID']) === m.id).map(recordOut_);
     const ph = photos.filter(x => String(x['\u4f1a\u54e1ID']) === m.id).map(photoOut_);
     const mo = monthRows.filter(x => String(x['\u4f1a\u54e1ID']) === m.id && num_(x['\u6708'])).map(monthOut_).sort((a, b) => a.n - b.n);
-    return { member: m, records: mine.slice(-60), photos: ph, months: mo };
+    const gl = logs.filter(x => String(x['\u4f1a\u54e1ID']) === m.id && x['\u5909\u66f4\u65e5']).map(goalLogOut_).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a._row - b._row)).map(x => { delete x._row; return x; });
+    const ce = courseEnd_(r);
+    return { member: m, records: mine.slice(-60), photos: ph, months: mo, goalLog: gl, weeks: recordWeeks_(r, recs), courseEnd: ce ? ymd_(ce) : '', courseOver: courseOver_(r) };
   });
   return { ok: true, today: today, members: members, sheetUrl: ss_().getUrl() };
+}
+
+// \u76ee\u6a19\u306e\u78ba\u8a8d\uff08\u78ba\u5b9a\u30fb\u898b\u76f4\u3057\u3092\u304a\u9858\u3044\u30fb\u9762\u8ac7\u3067\u76f8\u8ac7\uff09\u3092\u7ba1\u7406\u8005\u30da\u30fc\u30b8\u304b\u3089\u8a18\u9332\u3059\u308b
+function adminGoal_(req) {
+  checkAdmin_(req);
+  const id = String(req.id || ''), status = String(req.status || ''), memo = String(req.memo || '').slice(0, 300);
+  if (GOAL_CHECK.indexOf(status) < 0) throw new Error('bad_status');
+  if (!findMember_(id)) throw new Error('member_not_found');
+  ensureHeaders_(SH.member, JUDGE_HEAD);
+  const upd = { '\u76ee\u6a19\u306e\u78ba\u8a8d': status, '\u76ee\u6a19\u306e\u78ba\u8a8d\u65e5': fmtDate_(new Date()) };
+  if (memo) upd['\u62c5\u5f53\u304b\u3089\u306e\u3072\u3068\u3053\u3068'] = memo;
+  updateMember_(id, upd);
+  // \u5909\u66f4\u5c65\u6b74\u306e\u3044\u3061\u3070\u3093\u65b0\u3057\u3044\u884c\u306b\u3082\u3001\u78ba\u8a8d\u306e\u7d50\u679c\u3092\u66f8\u304f
+  ensureHeaders_(SH.goalLog, GOAL_HEAD);
+  const t = table_(SH.goalLog);
+  const mine = t.rows.filter(r => String(r['\u4f1a\u54e1ID']) === id && r['\u5909\u66f4\u65e5']);
+  const last = mine[mine.length - 1];
+  if (last) {
+    t.sheet.getRange(last._row, t.col['\u72b6\u614b'] + 1).setValue(status);
+    t.sheet.getRange(last._row, t.col['\u78ba\u8a8d\u65e5'] + 1).setValue(fmtDate_(new Date()));
+    if (memo) t.sheet.getRange(last._row, t.col['\u62c5\u5f53\u30e1\u30e2'] + 1).setValue(memo);
+  }
+  return { ok: true };
 }
 
 function adminPhoto_(req) {
@@ -469,6 +615,8 @@ function setup() {
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '\uff1a' + e.message); } };
   step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('\u898b\u51fa\u3057\u306e\u8ffd\u52a0', () => {
+    ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f'].concat(JUDGE_HEAD));
+    ensureHeaders_(SH.goalLog, GOAL_HEAD);
     ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
     ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
     ensureHeaders_(SH.meal, ['\u65e5\u6642', '\u4f1a\u54e1ID', '\u540d\u524d', '\u9001\u3063\u305f\u5185\u5bb9', '\u5199\u771f', '\u81ea\u52d5\u8fd4\u4fe1', '\u62c5\u5f53\u30d5\u30a3\u30fc\u30c9\u30d0\u30c3\u30af\uff08VIP\uff09']);
@@ -478,12 +626,13 @@ function setup() {
     const dv = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
     const put = (h, list) => { if (t.col[h] !== undefined) ms.getRange(2, t.col[h] + 1, 500, 1).setDataValidation(dv(list)); };
     put('\u30d7\u30e9\u30f3', ['STANDARD', 'VIP']);
-    put('\u5229\u7528', ['\u627f\u8a8d\u5f85\u3061', '\u5229\u7528\u4e2d', '\u5352\u696d\u751f', '\u505c\u6b62']);
+    put('\u5229\u7528', ['\u627f\u8a8d\u5f85\u3061', '\u5229\u7528\u4e2d', '\u5352\u696d\u751f', '\u7d42\u4e86', '\u505c\u6b62']);
     put('\u5ef6\u9577\u5e0c\u671b', ['\u5ef6\u9577\u3059\u308b', '\u5ef6\u9577\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']);
     put('\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b', ['\u53c2\u52a0\u3059\u308b', '\u53c2\u52a0\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']);
+    put('\u76ee\u6a19\u306e\u78ba\u8a8d', GOAL_CHECK);
     ms.setFrozenColumns(2);
   });
-  step('\u898b\u51fa\u3057\u306e\u56fa\u5b9a\u3068\u8272', () => [SH.member, SH.record, SH.photo, SH.meal].forEach(n => { const s = ss.getSheetByName(n); if (!s) return; s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); }));
+  step('\u898b\u51fa\u3057\u306e\u56fa\u5b9a\u3068\u8272', () => [SH.member, SH.record, SH.photo, SH.meal, SH.goalLog].forEach(n => { const s = ss.getSheetByName(n); if (!s) return; s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); }));
   step('\u6bce\u65e5\u306e\u30b9\u30c8\u30ec\u30c3\u30c1 \u30bf\u30d6', () => {
     if (ss.getSheetByName(SH.daily)) return;
     const src = SpreadsheetApp.openById(SOURCE_180DAY_ID).getSheets().find(s => s.getSheetId() === SOURCE_180DAY_GID);

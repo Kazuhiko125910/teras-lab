@@ -62,7 +62,8 @@ async function start() {
 }
 
 function load(d) {
-  S.data = d; S.today = parseD(d.today) || new Date(); d.months = d.months || [];
+  S.data = d; S.today = parseD(d.today) || new Date(); d.months = d.months || []; d.goalLog = d.goalLog || [];
+  d.member.judge = d.member.judge || {};
   // 講義の出し分け：「不使用」は出さない／「VIPのみ」はVIPだけに準備週の必修として出す
   const vipM = d.member.plan === 'VIP';
   d.content.lectures = d.content.lectures.map(l => Object.assign(l, { title: String(l.title || '').trim(), kind: String(l.kind || '').trim() || (/^0-\d+$/.test(l.code) ? '必修' : '') }))
@@ -102,13 +103,27 @@ function mode() {
   const m = S.data.member;
   if (m.status === '停止') return 'stopped';
   if (m.status === '卒業生') return 'grad';
+  if (m.status === '終了' || (courseOver() && m.start)) return 'ended';
   if (!goalSet()) return 'work';
   if (m.status === '承認待ち' || !m.start) return 'waiting';
   if (S.day > 182) return 'grad';
   return 'member';
 }
 function supportOver() { const e = supportEnd(); return !!(e && dayDiff(S.today, e) > 0); }
+const mealOff = () => supportOver() && !isAlum();
 const goalSet = () => !!(S.data.member.goal.setAt || S.data.member.goal.targets.length);
+const isAlum = () => S.data.member.status === '卒業生'; // 卒業生コミュニティに参加中
+
+// 受講期間の終わり（契約書 第6条・第10条）：支払日から6ヶ月。VIPで延長保証を受けた場合は9ヶ月
+function courseEnd() {
+  const m = S.data.member;
+  let e = parseD(m.end6);
+  if (!e) { const st = parseD(m.start); if (st) e = addDays(st, 181); }
+  if (e && m.plan === 'VIP' && /延長する/.test(m.extension)) e = addMonths(e, 3);
+  return e;
+}
+// 受講期間が終わり、卒業生コミュニティにも参加していない → 会員サイトの利用は終了
+function courseOver() { if (isAlum()) return false; const e = courseEnd(); return !!(e && dayDiff(S.today, e) > 0); }
 
 function supportEnd() {
   const m = S.data.member;
@@ -205,7 +220,6 @@ async function saveReview() {
     R.saved = true; R.hit = hit;
     actual.forEach((v, i) => { if (v == null) return; const k = S.goalLink[i]; if (k >= 0) S.form.v[k] = v; else S.form.g[i] = v; });
     S.busy = false;
-    if (S.mode === 'grad') S.P = { train: [], D: null };
     await saveDay('見直しを保存しました');
     scrollTo(0, 0);
   } catch (e) { S.busy = false; route(); toast('保存できませんでした。通信を確認してもう一度押してください'); }
@@ -214,13 +228,14 @@ async function saveReview() {
 function route() {
   const md_ = S.forceWork ? 'work' : mode();
   S.mode = md_;
-  const tabsOn = md_ === 'member' || md_ === 'grad' || md_ === 'ended';
+  const tabsOn = md_ === 'member' || md_ === 'grad';
   $('#tabs').hidden = !tabsOn;
-  $('#tabs').querySelector('[data-v="meal"]').hidden = supportOver();
+  $('#tabs').querySelector('[data-v="meal"]').hidden = mealOff();
   let html;
   if (md_ === 'stopped') html = `<section class="card msgcard"><h2>ご利用を停止しています</h2><p>ご不明な点は公式LINEでお問い合わせください。</p></section>`;
   else if (md_ === 'work') html = vWork();
   else if (md_ === 'waiting') html = vWaiting();
+  else if (md_ === 'ended') html = vEnded();
   else {
     const v = S.view;
     if (v === 'review') html = vReview();
@@ -228,7 +243,7 @@ function route() {
     else if (v === 'photo') html = vPhoto();
     else if (v === 'map') html = vMap();
     else if (v === 'meal') html = vMeal();
-    else html = md_ === 'grad' ? vGrad() : md_ === 'ended' ? vEnded() : vToday();
+    else html = md_ === 'grad' ? vGrad() : vToday();
   }
   $('#view').innerHTML = html;
   document.querySelectorAll('#tabs button').forEach(b => b.dataset.v === S.view ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
@@ -294,8 +309,46 @@ function guarantee() {
   const miss = doneWeeks - ok, canMiss = total - need;
   return { vip, total, need, ok, doneWeeks, miss, left: canMiss - miss, lost: miss > canMiss, over: S.week > total };
 }
-function recInWeek(w) { const st = parseD(S.data.member.start); if (!st) return 0; return S.data.records.filter(r => { const d = parseD(r.date); if (!d) return false; const n = dayDiff(d, st) + 1; return Math.ceil(n / 7) === w; }).length; }
+// 延長保証の「記録した日」＝ストレッチかトレーニングにチェックを入れて、その日のうちに保存した日（契約書 第9条第2項）
+const countable = r => !!(r.s1 || r.s2 || r.train);
+function recInWeek(w) { const st = parseD(S.data.member.start); if (!st) return 0; return S.data.records.filter(r => { if (!countable(r)) return false; const d = parseD(r.date); if (!d) return false; const n = dayDiff(d, st) + 1; return Math.ceil(n / 7) === w; }).length; }
 function streak() { let s = 0, d = todayRec() ? S.today : addDays(S.today, -1); const set = new Set(S.data.records.map(r => r.date)); while (set.has(fmt(d))) { s++; d = addDays(d, -1); } return s; }
+
+// ---------- 延長保証の測定（契約書 第9条：判定期間の終了日から7日以内に数値を入力） ----------
+function judgeWin() {
+  const vip = S.data.member.plan === 'VIP', total = vip ? 26 : 13, need = vip ? 22 : 11;
+  const from = total * 7 + 1, to = total * 7 + 7;
+  let ok = 0; for (let w = 1; w <= total; w++) if (recInWeek(w) >= 3) ok++;
+  return { vip, total, need, ok, from, to, open: S.day >= from && S.day <= to, deadline: mStart() ? addDays(mStart(), to - 1) : null };
+}
+function judgeCard() {
+  if (!mStart() || !goalSet()) return '';
+  const J = judgeWin(); if (!J.open || J.ok < J.need) return '';
+  const g = S.data.member.goal, jd = S.data.member.judge || {};
+  if (jd.at && !S.jEdit) return `<section class="rv-card"><div><b>延長保証の測定値を受け付けました（${esc(jd.at)}）</b><p>判定の結果は、7日以内に担当から公式LINEでお知らせします。${J.deadline ? md(J.deadline) + 'までは入力し直せます。' : ''}</p></div><button type="button" class="btn ghost" id="judge-edit">入力し直す</button></section>`;
+  if (!S.jv) S.jv = g.targets.map((t, i) => { const sr = goalSeries(i); return sr.length ? String(sr[sr.length - 1][1]) : ''; });
+  return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>延長保証の測定</h2><span class="aside">${J.deadline ? md(J.deadline) + 'まで' : ''}</span></div>
+  <div class="card rv-form">
+    <div class="hint" style="text-align:left">記録の条件（${J.total}週のうち${J.need}週以上）を満たしています。受講開始時と同じ方法で測った数値を入れてください。期限までに入力がないと、延長保証の対象外になります。</div>
+    ${g.targets.map((t, i) => `<div class="rv-g"><div class="rv-h"><b>${esc(nameOf(t.label))}</b><span>目標 <b class="num">${t.target ?? '—'}</b>${esc(unitOf(t.label))}</span></div><div class="rv-in"><input type="text" inputmode="decimal" aria-label="${esc(nameOf(t.label))}の測定値" data-jv="${i}" value="${esc(S.jv[i] ?? '')}"><span class="u">${esc(unitOf(t.label))}</span></div></div>`).join('')}
+    <button type="button" class="btn" id="judge-save" style="width:100%;margin-top:16px;padding:14px" ${S.busy ? 'disabled' : ''}>測定値を送る</button></div></section>`;
+}
+async function saveJudge() {
+  const values = (S.jv || []).map(v => v === '' || v == null || isNaN(Number(v)) ? null : Number(v));
+  if (values.every(v => v == null)) { toast('測った数値を1つ以上入れてください'); return; }
+  S.busy = true; route();
+  try {
+    const r = await api('saveJudge', { values });
+    S.data.member.judge = Object.assign({}, S.data.member.judge, { at: r.at || fmt(S.today) });
+    S.jEdit = false; S.busy = false;
+    values.forEach((v, i) => { if (v == null) return; const k = S.goalLink[i]; if (k >= 0) S.form.v[k] = v; else S.form.g[i] = v; });
+    await saveDay('測定値を送りました');
+  } catch (e) {
+    S.busy = false; route();
+    const msg = String(e.message || e);
+    toast(/unknown_action/.test(msg) ? '準備中のため送れませんでした。数値を公式LINEで担当に送ってください' : /judge_closed/.test(msg) ? '入力できる期間ではありません' : '送れませんでした。通信を確認してもう一度押してください');
+  }
+}
 
 function photoPlan() {
   const vip = S.data.member.plan === 'VIP';
@@ -356,16 +409,25 @@ function supportBar() {
   const e = supportEnd(); if (!e) return '';
   const n = dayDiff(e, S.today);
   const vip = S.data.member.plan === 'VIP';
-  if (n < 0) return `<div class="support"><b>${vip ? 'サポート期間' : 'LINEでの質問サポート'}は${md(e)}で終了しました</b>記録・動画・毎月の見直しは、このまま続けられます。</div>`;
+  if (n < 0) return `<div class="support"><b>${vip ? 'サポート期間' : 'LINEでの質問サポート'}は${md(e)}で終了しました</b>記録・動画・毎月の見直しは、${isAlum() || !courseEnd() ? 'このまま続けられます' : '受講期間（' + md(courseEnd()) + 'まで）は続けられます'}。</div>`;
   return `<div class="support"><b>${vip ? 'サポート期間' : 'LINEでの質問サポート'}：${md(e)}まで</b>${n <= 30 ? 'あと' + n + '日です。延長や、その後のご案内は担当からご連絡します。' : '気になることは公式LINEで気軽に質問してください。'}</div>`;
 }
 
+function goalCheckNote() {
+  const m = S.data.member, c = m.goalCheck;
+  if (c === '確認待ち') return `<div class="gcheck warn"><b>担当が目標を確認しています</b>実現できそうな数字かを確認して確定します。確定するとここに表示されます。</div>`;
+  if (c === '見直しをお願い') return `<div class="gcheck bad"><b>目標の見直しをお願いします</b>今の体の状態から見て、届きにくい数字があります。${m.coach ? '担当からのひとことを見て、' : ''}数字を調整してください。<button type="button" class="linkbtn" id="goal-edit2">目標を見直す</button></div>`;
+  if (c === '面談で相談') return `<div class="gcheck"><b>オンライン面談で一緒に決めます</b>日程は公式LINEでご連絡します。</div>`;
+  if (c === '確定') return `<div class="gcheck good"><b>担当が確認済み${m.goalCheckAt ? '（' + esc(m.goalCheckAt) + '）' : ''}</b>この目標で進めます。変えたいときは「編集」から相談できます。</div>`;
+  return '';
+}
 function goalCard() {
   const g = S.data.member.goal;
   if (!goalSet()) return `<section class="goal card gcta"><div class="gk">MY GOAL</div><h2 style="margin-top:6px">まだ目標が決まっていません</h2><p>卒業のときに達成したい目標を、最初に具体的に決めましょう（約10分）。</p><button type="button" id="goal-start">目標設定をはじめる</button></section>`;
   return `<section class="goal card" aria-label="わたしの目標"><button type="button" class="gedit" id="goal-edit">編集</button><div class="gk">MY GOAL・${goalCyc() > 1 ? '第' + goalCyc() + '期の目標' : '卒業目標'}</div><div class="gt">${esc(g.scene)}</div>${g.needs ? `<div class="needs">お悩み：${esc(g.needs)}</div>` : ''}
+    ${goalCheckNote()}
     <div class="gl">${g.targets.map((t, i) => goalRow(t, i)).join('')}</div>
-    <div class="gfoot">${goalCyc() > 1 ? '第' + goalCyc() + '期のゴール：' + md(monthDate(6 * goalCyc())) + 'の最終見直しで、3つのうち2つ以上の達成' : '卒業の条件：DAY182の測定③で、卒業目標3つのうち2つ以上を達成すること'}${nextReview() && mStart() ? '<br>次の見直し：' + md(monthDate(nextReview())) + '（あと' + dayDiff(monthDate(nextReview()), S.today) + '日）<button type="button" class="linkbtn" data-v="review">進み具合を見る</button>' : ''}</div>
+    <div class="gfoot">${goalCyc() > 1 ? '第' + goalCyc() + '期のゴール：' + md(monthDate(6 * goalCyc())) + 'の最終見直しで、3つのうち2つ以上の達成' : '卒業の条件：DAY182の測定③で、卒業目標3つのうち2つ以上を達成すること'}${nextReview() && mStart() ? '<br>次の見直し：' + md(monthDate(nextReview())) + '（あと' + dayDiff(monthDate(nextReview()), S.today) + '日）<button type="button" class="linkbtn" data-v="review">進み具合を見る</button>' : ''}${S.data.goalLog.length > 1 ? '<br><button type="button" class="linkbtn" data-v="log">目標の変化を見る</button>' : ''}</div>
     ${S.data.member.coach ? `<div class="coach"><i>加藤</i><div><small>担当からひとこと</small>${esc(S.data.member.coach)}</div></div>` : ''}</section>`;
 }
 function goalSeries(i) {
@@ -408,9 +470,9 @@ function vToday() {
   const done = Object.keys(S.form.checks).filter(k => S.form.checks[k] && (P.body.some(i => i.k === k) || trainItems.some(i => i.k === k) || head.some(i => i.k === k))).length + (S.form.mirror ? 1 : 0);
   const goalFields = m.goal.targets.map((t, i) => ({ t, i })).filter(x => S.goalLink[x.i] < 0);
   const tw = String(P.R.freq || '');
-  return hero() + reviewCard() + `
+  return hero() + reviewCard() + judgeCard() + `
   <div class="meter"><div class="dots" aria-label="今週の記録 ${wr}日">${[1, 2, 3].map(i => `<span class="${i <= wr ? 'on' : ''}">${i <= wr ? '✓' : i}</span>`).join('')}</div>
-    <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${wr >= 3 ? '今週の延長保証ラインをクリアしました' : 'あと' + (3 - wr) + '日で今週の延長保証ラインをクリア'}</p>${(() => { const g = guarantee(); if (S.week < 1 || g.over) return ''; return `<p class="gtee">延長保証：クリアした週 <b class="num">${g.ok}</b> / ${g.total}週（条件 ${g.need}週以上）${g.lost ? '<br>条件には届きませんでしたが、ここからの積み重ねが結果につながります' : g.left <= 1 ? '<br><b>あと' + g.left + '週まで</b>お休みしても条件を満たせます' : ''}</p>`; })()}</div></div>
+    <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${wr >= 3 ? '今週の延長保証ラインをクリアしました' : 'あと' + (3 - wr) + '日で今週の延長保証ラインをクリア'}</p><p class="gtee" style="margin-top:2px">ストレッチかトレーニングにチェックを入れて、その日のうちに保存した日が数えられます</p>${(() => { const g = guarantee(); if (S.week < 1 || g.over) return ''; return `<p class="gtee">延長保証：クリアした週 <b class="num">${g.ok}</b> / ${g.total}週（条件 ${g.need}週以上）${g.lost ? '<br>条件には届きませんでしたが、ここからの積み重ねが結果につながります' : g.left <= 1 ? '<br><b>あと' + g.left + '週まで</b>お休みしても条件を満たせます' : ''}</p>`; })()}</div></div>
   ${zoomCard()}${supportBar()}
   <div class="streak"><div class="stat"><div class="v">${streakN}<small>日</small></div><div class="k">連続記録</div></div><div class="stat"><div class="v">${S.data.records.length}<small>日</small></div><div class="k">これまでの記録</div></div><div class="stat"><div class="v">${S.week}<small>/26週</small></div><div class="k">いまの週</div></div></div>
   ${goalCard()}
@@ -448,27 +510,61 @@ function vWaiting() {
 function results() {
   return S.data.member.goal.targets.map((t, i) => { const s = goalSeries(i); const now = s.length ? s[s.length - 1][1] : null; return { t, now, ok: achieved(t, now) }; });
 }
+// 今日のおまかせ（180日プログラムと同じく、動画をランダムに表示）。同じ日は同じ組み合わせ、「ほかの動画にする」で入れ替え
+function seeded(str) { let h = 1779033703 ^ str.length; for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; } return () => { h = Math.imul(h ^ h >>> 16, 2246822507); h = Math.imul(h ^ h >>> 13, 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; }; }
+function pickN(list, n, rnd) { const a = [...list], out = []; while (a.length && out.length < n) out.push(a.splice(Math.floor(rnd() * a.length), 1)[0]); return out; }
+function gradPlan() {
+  const rnd = seeded(fmt(S.today) + '|' + S.data.member.id + '|' + (S.shuf || 0));
+  const sCodes = Object.keys(C().stretch).filter(c => C().stretch[c][1]);
+  const tCodes = Object.keys(C().train).filter(c => C().train[c][1] && !/負荷/.test(c));
+  let [c1, c2] = pickN(sCodes, 2, rnd), [t1] = pickN(tCodes, 1, rnd);
+  const tr = todayRec(); // 保存済みの日は、保存した動画をそのまま出す
+  if (!S.shuf && tr && (tr.s1 || tr.s2 || tr.train)) { c1 = C().stretch[tr.s1] ? tr.s1 : c1; c2 = C().stretch[tr.s2] ? tr.s2 : c2; const t0 = String(tr.train || '').split('・')[0]; if (C().train[t0]) t1 = t0; }
+  const body = [[ 's1', c1, 'ストレッチ' ], [ 's2', c2, 'ストレッチ' ]].filter(x => x[1]).map(([k, code, s]) => ({ k, code, t: C().stretch[code][0], link: C().stretch[code][1], s }));
+  const train = t1 ? [{ k: 't' + t1, code: t1, t: C().train[t1][0], link: C().train[t1][1], s: 'トレーニング', lvl: C().train[t1][2] }] : [];
+  return { train: t1 ? [t1] : [], D: ['', '', '', c1 || '', c2 || ''], body, trainItems: train };
+}
 function vGrad() {
   const res = results(), n = res.filter(r => r.ok).length;
   const st = parseD(S.data.member.start), since = st ? Math.max(0, S.day - 182) : 0;
-  const D = dailyOf(S.day);
-  const items = D ? [['s1', D[3]], ['s2', D[4]]].map(([k, c]) => C().stretch[c] ? { k, code: c, t: C().stretch[c][0], link: C().stretch[c][1], s: 'ストレッチ' } : null).filter(Boolean) : [];
-  return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">${S.data.member.status === '卒業生' ? 'RESHAPE 卒業生' : 'RESHAPE 第' + curCycle() + '期'}</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span>${goalCyc() > 1 ? `<span class="chip">第${goalCyc()}期の目標に挑戦中</span>` : `<span class="chip">卒業目標 ${n}/${res.length} 達成</span>`}${S.data.member.status === '卒業生' ? '<span class="chip">卒業生コミュニティ</span>' : ''}</div></div>${spine(1)}</div></section>
-  ${reviewCard()}${supportOver() ? '' : zoomCard() + supportBar()}${goalCard()}
+  const G = S.P = gradPlan();
+  const dict = ch => C().lectures.filter(l => l.kind === '辞書' && l.code.startsWith(ch + '-') && l.link).map(l => `<a href="${esc(l.link)}" target="_blank" rel="noopener"><b>${esc(l.code)}</b>${esc(l.title.replace(/^.*?（|）$/g, ''))}</a>`).join('');
+  const alum = isAlum(), e = courseEnd();
+  return `<section class="hero"><div class="hero-top"><div><div class="hello">${md(S.today)}（${DOW[S.today.getDay()]}）　${esc(S.data.member.name)}さん</div><div class="day"><span class="dl">${alum ? 'RESHAPE 卒業生' : 'RESHAPE 第' + curCycle() + '期'}</span><span class="dn">${since}</span><small class="num">日目</small></div><div class="wk">ここからは自分で続ける番です</div><div class="chips"><span class="chip">182日 完走</span>${goalCyc() > 1 ? `<span class="chip">第${goalCyc()}期の目標に挑戦中</span>` : `<span class="chip">卒業目標 ${n}/${res.length} 達成</span>`}${alum ? '<span class="chip">卒業生コミュニティ</span>' : ''}</div></div>${spine(1)}</div></section>
+  ${reviewCard()}${judgeCard()}${supportOver() ? '' : zoomCard() + supportBar()}
+  ${!alum && e ? `<div class="support"><b>会員サイトは${md(e)}まで使えます</b>卒業生コミュニティに参加すると、そのあとも記録・おまかせ動画・目標の変化の確認を続けられます。</div>` : ''}
+  ${goalCard()}
   <div class="meter"><div class="dots">${[1, 2, 3].map(i => `<span class="${i <= Math.min(3, recThisCalWeek()) ? 'on' : ''}">${i <= recThisCalWeek() ? '✓' : i}</span>`).join('')}</div><div><b>今週 ${recThisCalWeek()}日</b><p>卒業後も、週3日を目安に続けましょう</p></div></div>
-  <section class="sec"><div class="sec-h"><h2>今日のストレッチ</h2></div><div class="card">${items.map(row).join('')}<div class="note">困ったときは「道のり」の辞書から選べます。</div></div></section>
+  <section class="sec"><div class="sec-h"><h2>今日のおまかせ</h2><button type="button" class="linkbtn" id="shuffle">ほかの動画にする</button></div><div class="card">${G.body.map(row).join('')}${G.trainItems.map(row).join('')}${G.body.length || G.trainItems.length ? '' : '<div class="note">動画を準備しています。</div>'}<div class="note">毎日ちがう動画をランダムに選んでいます。やったものにチェックを入れて、下で記録を保存してください。</div></div></section>
+  ${dict('4') || dict('5') ? `<section class="sec"><div class="sec-h"><h2>部位から選ぶ</h2><span class="aside">気になるところをピンポイントで</span></div><div class="card">${dict('4') ? `<div class="sec-h" style="padding:12px 14px 0;margin:0"><b style="font-size:13px">セルフケア</b></div><div class="dict">${dict('4')}</div>` : ''}${dict('5') ? `<div class="sec-h" style="padding:4px 14px 0;margin:0"><b style="font-size:13px">トレーニング</b></div><div class="dict">${dict('5')}</div>` : ''}</div></section>` : ''}
   ${recordBlock()}`;
 }
 function recThisCalWeek() { const mon = addDays(S.today, -((S.today.getDay() + 6) % 7)); return S.data.records.filter(r => { const d = parseD(r.date); return d && d >= mon && d <= S.today; }).length; }
 function recordBlock() {
-  return `<section class="sec"><div class="sec-h"><h2>わたしの記録</h2></div><div class="card"><div class="fields">${S.fields.map((f, i) => `<div class="field"><label for="f-${i}">${esc(f.label)} <span>${esc(f.unit)}</span></label><input type="number" inputmode="decimal" id="f-${i}" step="any" value="${esc(S.form.v[i])}" data-f="${i}"></div>`).join('')}<div class="field"><label for="f-note">ひとこと</label><textarea id="f-note">${esc(S.form.note)}</textarea></div></div></div></section>
-  <button type="button" class="save" id="save">${S.form.saved ? '今日の記録を更新する' : '今日の記録を保存'}</button>`;
+  return `<section class="sec"><div class="sec-h"><h2>わたしの記録</h2><button type="button" class="linkbtn" data-v="log">これまでの変化</button></div><div class="card"><div class="fields">${S.fields.map((f, i) => `<div class="field"><label for="f-${i}">${esc(f.label)} <span>${esc(f.unit)}</span></label><input type="number" inputmode="decimal" id="f-${i}" step="any" value="${esc(S.form.v[i])}" data-f="${i}"></div>`).join('')}${S.data.member.goal.targets.map((t, i) => ({ t, i })).filter(x => S.goalLink[x.i] < 0).map(({ t, i }) => `<div class="field"><label for="g-${i}">${esc(nameOf(t.label))} <span>目標・測ったときだけ</span></label><input type="number" inputmode="decimal" id="g-${i}" step="any" value="${esc(S.form.g[i])}" data-g="${i}"></div>`).join('')}<div class="field"><label for="f-note">ひとこと</label><textarea id="f-note">${esc(S.form.note)}</textarea></div></div></div></section>
+  <button type="button" class="save" id="save" ${S.busy ? 'disabled' : ''}>${S.form.saved ? '今日の記録を更新する' : '今日の記録を保存'}</button>`;
 }
 function vEnded() {
-  const res = results(), n = res.filter(r => r.ok).length, e = supportEnd();
-  return `<section class="card msgcard"><img src="logo-full.webp" alt="Teras Lab. RESHAPE" style="width:150px"><h2>サポート期間が終了しました</h2><p>${md(e)}でサポート期間が終わりました。ここまで本当にお疲れさまでした。これまでの記録と姿勢写真は、下のメニューから見返せます。</p></section>
-  <section class="goal card"><div class="gk">RESULT・卒業目標</div><div class="res" style="padding:10px 0 0">${res.map(r => `<div><i class="${r.ok ? 'ok' : 'ng'}">${r.ok ? '✓' : '…'}</i><span>${esc(nameOf(r.t.label))}</span><span class="num"><b>${r.t.start ?? '—'} → ${r.now ?? '—'}</b>${esc(unitOf(r.t.label))}</span></div>`).join('')}</div>
-  <div class="gfoot">${n >= 2 ? '卒業目標を達成しました。卒業生コミュニティのご案内を担当からお送りします。' : '延長や、今後の続け方については担当からご連絡します。'}</div></section>`;
+  const res = results(), n = res.filter(r => r.ok).length, e = courseEnd();
+  return `<section class="card msgcard"><img src="logo-full.webp" alt="Teras Lab. RESHAPE" style="width:150px"><h2>受講期間が終了しました</h2><p>${e ? md(e) + 'で' : ''}受講期間が終わりました。ここまで本当にお疲れさまでした。</p><p>会員サイトのご利用は、受講期間の終了とともに終わりました。<b>卒業生コミュニティ</b>（月額10,000円）に参加すると、会員サイトを引き続き使えます。おまかせ動画、日々の記録、体と目標の変化の確認ができ、これまでの記録もそのまま引き継ぎます。</p><p>参加のご案内は、担当から公式LINEでお送りします。</p></section>
+  ${res.length ? `<section class="goal card"><div class="gk">RESULT・卒業目標</div><div class="res" style="padding:10px 0 0">${res.map(r => `<div><i class="${r.ok ? 'ok' : 'ng'}">${r.ok ? '✓' : '…'}</i><span>${esc(nameOf(r.t.label))}</span><span class="num"><b>${r.t.start ?? '—'} → ${r.now ?? '—'}</b>${esc(unitOf(r.t.label))}</span></div>`).join('')}</div>
+  <div class="gfoot">${n >= 2 ? '卒業目標を達成しました。' : 'ここまで続けてきたことが一番の財産です。'}</div></section>` : ''}`;
+}
+
+// ---------- 目標の変化（契約書 第5条第7項：変更前後の目標と変更日を記録） ----------
+function goalHistory() {
+  const L = S.data.goalLog || []; if (!L.length) return '';
+  const pill = st => st === '確定' ? '<span class="pill good">確定</span>' : st === '見直しをお願い' ? '<span class="pill bad">見直し</span>' : st === '面談で相談' ? '<span class="pill">面談で相談</span>' : '<span class="pill warn">確認待ち</span>';
+  const rows = L.map((x, j) => {
+    const prev = j > 0 ? L[j - 1] : null;
+    const lines = x.targets.map(t => {
+      const p = prev && prev.targets.find(y => nameOf(y.label) === nameOf(t.label));
+      const ch = p && p.target !== t.target ? `<small class="gh-was">前回の目標 ${p.target ?? '—'}</small>` : prev && !p ? '<small class="gh-was">新しく追加</small>' : '';
+      return `<div class="gh-t"><span>${esc(nameOf(t.label))}</span><span class="num">${t.start ?? '—'} → <b>${t.target ?? '—'}</b>${esc(unitOf(t.label))}</span>${ch}</div>`;
+    }).join('');
+    return `<div class="rv-hist"><div class="rv-hh"><b>${j === 0 ? '最初の目標' : x.cycle > (prev ? prev.cycle : 1) ? '第' + x.cycle + '期の目標' : '目標の変更'}</b><span class="num">${esc(x.date)}　${pill(x.status)}</span></div>${lines}${x.memo ? `<p><small>担当より</small>${esc(x.memo)}</p>` : ''}</div>`;
+  }).reverse().join('');
+  return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>目標の変化</h2><span class="aside">新しい順</span></div><div class="card">${rows}</div></section>`;
 }
 
 // ---------- 記録 ----------
@@ -498,7 +594,7 @@ function vLog() {
   const series = S.fields.map((f, i) => ({ f, i, pts: S.data.records.map(r => { const d = parseD(r.date); return r.v[i] != null && d ? [dayDiff(d, st) + 1, r.v[i]] : null; }).filter(Boolean).sort((a, b) => a[0] - b[0]) }));
   const cur = series[S.chart] || series[0];
   const prog = progressBlock();
-  return `${prog ? `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>毎月の中間目標</h2><button type="button" class="linkbtn" data-v="review">見直しページへ</button></div><div class="card">${prog}</div></section>` : ''}
+  return `${goalHistory()}${prog ? `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>毎月の中間目標</h2><button type="button" class="linkbtn" data-v="review">見直しページへ</button></div><div class="card">${prog}</div></section>` : ''}
   <section class="sec" style="margin-top:4px"><div class="sec-h"><h2>記録カレンダー</h2><span class="aside">日付を押すと中身が見られます</span></div>
   <div class="card"><div class="cal">${'日月火水木金土'.split('').map(x => `<span class="dh">${x}</span>`).join('')}${cells}</div>
   <div class="legend"><span><i style="background:var(--primary)"></i>できた</span><span><i style="background:var(--primary-soft)"></i>一部</span><span><i style="border:1.5px dashed var(--line)"></i>記録なし</span><span><i style="background:var(--sun);border-radius:50%"></i>姿勢写真</span></div>${det}</div></section>
@@ -691,12 +787,12 @@ function vMap() {
 
 // ---------- 食事 ----------
 function vMeal() {
-  const vip = S.data.member.plan === 'VIP';
-  if (supportOver()) return `<section class="card msgcard"><h2>食事サポート</h2><p>食事サポートは、サポート期間（${md(supportEnd())}まで）で終了しました。</p></section>`;
+  const vip = S.data.member.plan === 'VIP' || isAlum(); // 食事写真はVIPと卒業生コミュニティの人
+  if (mealOff()) return `<section class="card msgcard"><h2>食事サポート</h2><p>食事サポートは、サポート期間（${md(supportEnd())}まで）で終了しました。</p></section>`;
   S.chat[0].t = vip ? 'こんにちは、食事サポートです🍚\n食べたものの写真か、内容を送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。'
     : 'こんにちは、食事サポートです🍚\n食べたものや、迷っていることを文章で送ってください。主食・主菜・副菜のバランスと、次の一食のヒントを返します。';
   return `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>食事サポート</h2><span class="aside">LINEのメニューからも開けます</span></div>
-  ${vip && S.week >= 9 ? '<div class="support" style="margin:0 0 10px"><b>VIP特典：食事写真へのフィードバック</b>送った食事写真に、加藤からもコメントが届きます。</div>' : ''}
+  ${isAlum() ? '<div class="support" style="margin:0 0 10px"><b>卒業生コミュニティ：食事写真へのフィードバック</b>送った食事写真に、加藤からもコメントが届きます。</div>' : vip && S.week >= 9 ? '<div class="support" style="margin:0 0 10px"><b>VIP特典：食事写真へのフィードバック</b>送った食事写真に、加藤からもコメントが届きます。</div>' : ''}
   <div class="card"><div class="chat" id="chat">${S.chat.map(m => `<div class="msg ${m.r}">${m.img ? `<img src="${m.img}" alt="送った食事の写真">` : ''}${esc(m.t)}</div>`).join('')}${S.busy ? '<div class="msg bot">…</div>' : ''}</div>
   <div class="quick">${['朝ごはんを送る', 'コンビニで選ぶなら？', '間食したくなったら'].map(q => `<button type="button" data-q="${q}">${q}</button>`).join('')}</div>
   <form class="composer" id="meal-form">${vip ? `<label for="meal-img" aria-label="写真を送る">${icCam}</label><input type="file" id="meal-img" accept="image/*">` : ''}<input type="text" id="meal-txt" placeholder="例：鮭おにぎり、ゆで卵、サラダ" autocomplete="off"><button type="submit" class="send" aria-label="送信"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7z"/></svg></button></form></div>
@@ -740,7 +836,7 @@ function vWork() {
   const cy = a.cycle, endD = mStart() ? monthDate(6 * cy) : null;
   if (s < 0) return a.next
     ? `<section class="card intro"><img src="logo-full.webp" alt="Teras Lab. RESHAPE"><h2>第${cy}期の目標を決めましょう</h2><p>6ヶ月、本当におつかれさまでした。ここからの6ヶ月（${endD ? md(endD) + 'まで' : '次の6ヶ月'}）で届きたい姿と、毎月の中間目標を決めます。</p><ul><li>所要時間は約10分</li><li>「いまの値」には今の数字が入っています</li><li>毎月の見直しの日に、LINEでお知らせします</li></ul><button type="button" class="go" id="w-start">目標設定をはじめる</button>${goalSet() ? '<button type="button" class="back" id="w-cancel" style="margin-top:8px">あとで決める</button>' : ''}</section>`
-    : `<section class="card intro"><img src="logo-full.webp" alt="Teras Lab. RESHAPE"><h2>ようこそ、${esc(m.name || '')}さん</h2><p>RESHAPEは、26週間（182日）で「なりたい自分」に届くためのプログラムです。はじめに、6ヶ月後に達成したい目標と、そこへ向かう毎月の中間目標を一緒に決めましょう。</p><ul><li>所要時間は約10分、7つのステップに答えるだけ</li><li>決めた目標は毎日の画面にずっと表示されます</li><li>毎月1回、見直しの日にLINEでお知らせします</li><li>あとからいつでも編集できます</li></ul>${(() => { const v = C().lectures.filter(l => ['0-0', '0-1', '0-2'].includes(l.code) && l.link); return v.length ? `<div class="hint" style="text-align:left">はじめる前に、この動画を番号の順に見ておくとスムーズです。${v.map(l => `<br><a href="${esc(l.link)}" target="_blank" rel="noopener">▶ ${esc(l.code)} ${esc(l.title)}${l.min ? '（' + l.min + '分）' : ''}</a>`).join('')}</div>` : ''; })()}<button type="button" class="go" id="w-start">目標設定をはじめる</button></section>`;
+    : `<section class="card intro"><img src="logo-full.webp" alt="Teras Lab. RESHAPE"><h2>ようこそ、${esc(m.name || '')}さん</h2><p>RESHAPEは、26週間（182日）で「なりたい自分」に届くためのプログラムです。はじめに、6ヶ月後に達成したい目標と、そこへ向かう毎月の中間目標を一緒に決めましょう。</p><ul><li>所要時間は約10分、7つのステップに答えるだけ</li><li>決めた目標は毎日の画面にずっと表示されます</li><li>毎月1回、見直しの日にLINEでお知らせします</li><li>決めた目標は担当が確認して確定します。変えたいときは、あとから見直しを相談できます</li></ul>${(() => { const v = C().lectures.filter(l => ['0-0', '0-1', '0-2'].includes(l.code) && l.link); return v.length ? `<div class="hint" style="text-align:left">はじめる前に、この動画を番号の順に見ておくとスムーズです。${v.map(l => `<br><a href="${esc(l.link)}" target="_blank" rel="noopener">▶ ${esc(l.code)} ${esc(l.title)}${l.min ? '（' + l.min + '分）' : ''}</a>`).join('')}</div>` : ''; })()}<button type="button" class="go" id="w-start">目標設定をはじめる</button></section>`;
   const q = (id, label, v, ta, ph) => `<div class="q"><label for="w-${id}">${label}</label>${ta ? `<textarea id="w-${id}" data-w="${id}" placeholder="${esc(ph || '')}">${esc(v)}</textarea>` : `<input type="text" id="w-${id}" data-w="${id}" value="${esc(v)}" placeholder="${esc(ph || '')}">`}</div>`;
   const bodies = [
     `<div class="lead">まずは今の体の状態と、一番なんとかしたいことを書き出します。</div><div class="q"><label>気になっていること<small>いくつでも</small></label><div class="opts">${NAY.map(n => `<button type="button" data-nay="${n}" aria-pressed="${a.nay.includes(n)}">${n}</button>`).join('')}</div></div>${q('top', 'その中で、一番解決したいこと', a.top, 1, '例：朝起きたときの腰のこわばりをなくしたい')}`,
@@ -748,14 +844,14 @@ function vWork() {
     `<div class="lead">${cy > 1 ? '次の6ヶ月（' + (endD ? md(endD) + 'まで' : '6ヶ月後') + '）の自分' : '6ヶ月後、卒業するときの自分'}を「場面」で思い浮かべます。誰と、どこで、何をしていますか。</div>${q('scene', '6ヶ月後の理想の場面', a.scene, 1, '例：日曜の朝、孫と公園を1時間歩いている')}`,
     `<div class="lead">理想の場面を、測れる数字に置きかえます。${cy > 1 ? 'この数字が第' + cy + '期の目標になり、' + (endD ? md(endD) : '6ヶ月後') + 'の最終見直しで確認します。' : 'この数字が<b>卒業目標</b>になり、DAY182の測定③で判定します。'}項目名の後ろに（単位）をつけてください。</div>
      ${a.tg.map((t, i) => `<div class="tgt"><span class="h full">卒業目標 ${i + 1}</span><input class="full" type="text" aria-label="卒業目標${i + 1}の項目" data-tg="${i},0" value="${esc(t[0])}" placeholder="${['体重（kg）', '朝の腰の痛み（0〜10）', '公園を休まず歩ける時間（分）'][i]}"><span class="h">いまの値</span><span class="h">6ヶ月後の目標</span><input type="text" inputmode="decimal" aria-label="卒業目標${i + 1}のいまの値" data-tg="${i},1" value="${esc(t[1])}"><input type="text" inputmode="decimal" aria-label="卒業目標${i + 1}の目標" data-tg="${i},2" value="${esc(t[2])}"></div>`).join('')}
-     <div class="hint">よい目標のコツ：①自分で測れる（体重計・0〜10の点数・時間など）②6ヶ月で届く、少しがんばる数字 ③「痛みがなくなる」ではなく「朝の痛みが2以下」のように言い切る。${cy > 1 ? '' : '<br>数字は初回の面談で加藤と一緒に最終決定します。'}</div>`,
+     <div class="hint">よい目標のコツ：①自分で測れる（体重計・0〜10の点数・時間など）②6ヶ月で届く、少しがんばる数字 ③「痛みがなくなる」ではなく「朝の痛みが2以下」のように言い切る。<br>入力した数字は加藤が確認して確定します。${m.plan === 'VIP' ? 'VIPは初回カウンセリングで一緒に決めます。' : '届きにくそうな数字のときは、見直しのお願いやオンライン面談のご案内をします。'}</div>`,
     `<div class="lead">6ヶ月後の目標までを、1ヶ月ごとの小さなゴールに分けます。数字は自動で計算してあるので、無理のないように調整してください。毎月の見直しの日に、ここまで来られたかを確認します。</div>
      ${a.tg.map((t, i) => tgOk(t) ? `<div class="ms"><div class="ms-h"><b>${esc(t[0])}</b><span class="num">いま ${esc(t[1])} → 6ヶ月後 ${esc(t[2])}</span></div><div class="ms-g">${[1, 2, 3, 4, 5, 6].map(k => { const n = 6 * (cy - 1) + k, d = mStart() ? monthDate(n) : null, done = (monthRow(n) || {}).doneAt;
         return `<label><small>${k}ヶ月目${d ? '<br>' + md(d) : ''}</small><input type="text" inputmode="decimal" data-ms="${i},${k - 1}" value="${esc(a.ms[i][k - 1])}" ${k === 6 || done ? 'readonly' : ''} aria-label="${esc(t[0])} ${k}ヶ月目"></label>`; }).join('')}</div></div>` : '').join('')}
      <button type="button" class="btn ghost" id="ms-auto" style="margin-top:6px">自動で計算し直す</button>
      <div class="hint">6ヶ月目は、前のステップで決めた目標の数字です。見直しの日にうまくいかなかったら、翌月以降の数字はそこで調整できます。</div>`,
     `<div class="lead">続く人は「いつ・どこで」を先に決めています。うまくいかない日の作戦も立てておきましょう。</div>${q('when', '毎日やる時間と場所', a.when, 0, '例：朝食のあと、リビングのヨガマットで')}${q('plan', 'つまずきそうな場面と、そのときの作戦', a.plan, 1, '例：週末は時間がとれない → ストレッチ1本だけでもやって記録する')}`,
-    `<div class="lead">書いた内容を確認して、名前を入れたら完了です。この内容は毎日の画面の「MY GOAL」にずっと表示されます。</div>
+    `<div class="lead">書いた内容を確認して、名前を入れたら完了です。この内容は毎日の画面の「MY GOAL」にずっと表示されます。保存すると担当が数字を確認して確定します。目標を変えたときは、変更前と変更後の目標と日付が記録に残ります。</div>
      <div class="sum"><div><small>一番解決したいこと</small>${esc(a.top)}</div><div><small>6ヶ月後の理想の場面</small>${esc(a.scene)}</div><div><small>${cy > 1 ? '第' + cy + '期の目標' : '卒業目標'}</small>${a.tg.filter(t => t[0]).map(t => `${esc(t[0])}：${esc(t[1])} → <b>${esc(t[2])}</b>`).join('<br>')}</div><div><small>毎月の中間目標</small>${a.tg.map((t, i) => tgOk(t) ? `${esc(nameOf(t[0]))}：${a.ms[i].map((v, k) => (k + 1) + 'ヶ月目 ' + esc(v)).join('／')}` : '').filter(Boolean).join('<br>')}</div><div><small>続けるための約束</small>${esc(a.when)}<br>${esc(a.plan)}</div></div>
      ${q('sign', '名前（宣言のサイン）', a.sign, 0)}`];
   return `<div class="steps" aria-hidden="true">${WORK_STEPS.map((_, i) => `<i class="${i <= s ? 'on' : ''}"></i>`).join('')}</div>
@@ -779,11 +875,13 @@ async function saveGoal() {
   try {
     const r = await api('saveGoal', { goal });
     if (r.months) S.data.months = r.months;
+    if (r.goalLog) S.data.goalLog = r.goalLog;
+    if (r.goalCheck != null) { S.data.member.goalCheck = r.goalCheck; S.data.member.goalCheckAt = r.goalCheckAt || ''; }
     S.data.member.goalCycle = a.cycle;
     const g = S.data.member.goal; Object.assign(g, { scene: goal.scene, needs: goal.needs, top: goal.top, why: goal.why, ifnot: goal.ifnot, when: goal.when, plan: goal.plan, targets: goal.targets }, { setAt: fmt(S.today) });
     S.goalLink = g.targets.map(t => matchField(t.label));
     S.form.g = g.targets.map(() => '');
-    S.forceWork = false; S.ws = -1; S.view = 'today'; toast('目標を保存しました');
+    S.forceWork = false; S.ws = -1; S.view = 'today'; toast(S.data.member.goalCheck === '確認待ち' ? '目標を保存しました。担当の確認後に確定します' : '目標を保存しました');
   } catch (e) { toast('保存できませんでした。もう一度お試しください'); }
   S.busy = false; route(); scrollTo(0, 0);
 }
@@ -791,7 +889,7 @@ async function saveGoal() {
 // ---------- 記録の保存 ----------
 async function saveDay(quiet) {
   if (S.busy) return;
-  const P = S.P || plan(S.day);
+  const P = S.mode === 'grad' ? gradPlan() : (S.P || plan(S.day));
   const f = S.form;
   const trained = P.train.filter(c => f.checks['t' + c]);
   const watched = Object.keys(f.checks).filter(k => k[0] === 'l' && f.checks[k]).map(k => k.slice(1));
@@ -807,7 +905,13 @@ async function saveDay(quiet) {
     if (quiet) toast(quiet);
     else if (first) celebrate();
     else toast('今日の記録を更新しました');
-  } catch (e) { S.busy = false; route(); toast('保存できませんでした。通信を確認してもう一度押してください'); }
+  } catch (e) {
+    S.busy = false; route();
+    const msg = String(e.message || e);
+    if (/date_changed/.test(msg)) { toast('日付が変わりました。今日の画面を読み込み直します'); setTimeout(() => location.reload(), 1800); return; }
+    if (/course_over/.test(msg)) { toast('受講期間が終了したため保存できません'); return; }
+    toast('保存できませんでした。通信を確認してもう一度押してください');
+  }
 }
 function celebrate() {
   const wr = recInWeek(S.week), mi = missed(), nd = dailyOf(S.day + 1);
@@ -883,9 +987,12 @@ document.addEventListener('click', async e => {
   if (t.dataset.cmp) { const d = +t.dataset.cmp, L = S.cmp[0], R = S.cmp[1] ?? S.cmp[0]; if (!S.cmp.includes(d)) S.cmp = d > R ? [L, d] : [d, R]; route(); return; }
   if (t.dataset.q) { sendMeal(t.dataset.q); return; }
   if (t.dataset.nay) { const a = S.work.nay, n = t.dataset.nay; a.includes(n) ? a.splice(a.indexOf(n), 1) : a.push(n); route(); return; }
-  if (t.id === 'save') { if (S.mode === 'grad') { S.P = { train: [], D: null }; } saveDay(); return; }
+  if (t.id === 'save') { saveDay(); return; }
   if (t.id === 'toast-close') { document.querySelector('.toast')?.remove(); return; }
-  if (t.id === 'goal-start' || t.id === 'goal-edit') { S.work = workFromMember(S.data.member); S.forceWork = true; S.ws = goalSet() ? 0 : -1; route(); scrollTo(0, 0); return; }
+  if (t.id === 'shuffle') { S.shuf = (S.shuf || 0) + 1; ['s1', 's2'].forEach(k => delete S.form.checks[k]); Object.keys(S.form.checks).filter(k => k[0] === 't').forEach(k => delete S.form.checks[k]); route(); return; }
+  if (t.id === 'judge-save') { saveJudge(); return; }
+  if (t.id === 'judge-edit') { S.jEdit = true; route(); return; }
+  if (t.id === 'goal-start' || t.id === 'goal-edit' || t.id === 'goal-edit2') { S.work = workFromMember(S.data.member); S.forceWork = true; S.ws = goalSet() ? 0 : -1; route(); scrollTo(0, 0); return; }
   if (t.id === 'goal-next') { S.work = workFromMember(S.data.member, true); S.forceWork = true; S.ws = -1; route(); scrollTo(0, 0); return; }
   if (t.id === 'ms-auto') { autoMs(true); route(); return; }
   if (t.id === 'rv-save') { saveReview(); return; }
@@ -905,6 +1012,7 @@ document.addEventListener('input', e => {
   if (el.dataset.rva !== undefined) { S.rv.actual[+el.dataset.rva] = el.value; const o = document.getElementById('rvp-' + el.dataset.rva); if (o) o.innerHTML = rvPill(+el.dataset.rva); }
   if (el.dataset.rvn !== undefined) S.rv.nt[+el.dataset.rvn] = el.value;
   if (el.dataset.rvt) S.rv[el.dataset.rvt] = el.value;
+  if (el.dataset.jv !== undefined) S.jv[+el.dataset.jv] = el.value;
 });
 document.addEventListener('change', async e => {
   const el = e.target;

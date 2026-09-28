@@ -7,7 +7,7 @@
 <title>RESHAPE 管理</title>
 <link rel="icon" href="logo-mark.webp">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Outfit:wght@400;600;700&family=Cormorant+Garamond:wght@500&family=Cinzel:wght@500;600&display=swap">
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 <style>
 .wrap{max-width:760px;padding-block:12px 40px}
 .login{padding:22px 18px;display:grid;gap:10px}
@@ -24,6 +24,11 @@
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .filters button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font-size:12px;font-weight:700}
 .filters button[aria-pressed="true"]{background:var(--ink);color:var(--ground)}
+.gc{display:grid;gap:8px}
+.gc input{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit;font-size:13px}
+.gc-btns{display:flex;gap:6px;flex-wrap:wrap}
+.gc-btns button{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:6px 12px;font-size:12px;font-weight:700}
+.gc-btns button[data-gc="確定"]{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
@@ -68,16 +73,20 @@ function gtee(x) {
   const m = x.member, st = parseD(m.start), today = parseD(DATA.today); if (!st) return null;
   const vip = m.plan === 'VIP', total = vip ? 26 : 13, need = vip ? 22 : 11;
   const week = Math.ceil((dd(today, st) + 1) / 7), doneW = Math.min(total, Math.max(0, week - 1));
-  const cnt = {}; x.records.forEach(r => { const d = parseD(r.date); if (!d) return; const w = Math.ceil((dd(d, st) + 1) / 7); cnt[w] = (cnt[w] || 0) + 1; });
+  // 記録した日＝ストレッチかトレーニングを実施して、その日のうちに保存した日（契約書 第9条第2項）
+  const cnt = {}; x.records.forEach(r => { if (!(r.s1 || r.s2 || r.train)) return; const d = parseD(r.date); if (!d) return; const w = Math.ceil((dd(d, st) + 1) / 7); cnt[w] = (cnt[w] || 0) + 1; });
   let ok = 0; for (let w = 1; w <= doneW; w++) if ((cnt[w] || 0) >= 3) ok++;
-  const miss = doneW - ok, lost = miss > total - need, done = week > total;
+  const done = week > total;
+  if (x.weeks && done) ok = x.weeks.ok; // 判定期間が終わったら、全期間の記録で数えた裏側の値を使う
+  const miss = doneW - ok, lost = miss > total - need;
   const tg = m.goal.targets, recs = x.records;
   const nowOf = i => { for (let j = recs.length - 1; j >= 0; j--) { const v = recs[j].g && recs[j].g[i] != null ? recs[j].g[i] : null; if (v != null) return v; } return null; };
   const hit = tg.filter((t, i) => { const v = nowOf(i); return v != null && t.start != null && t.target != null && (t.target < t.start ? v <= t.target : v >= t.target); }).length;
   const fin = (x.months || []).find(r => r.n === 6 && r.doneAt); // 6ヶ月の最終見直しの達成数を優先
   const hits = fin && fin.hit != null ? fin.hit : hit;
-  const eligible = done && !lost && (vip ? hits < 2 : true);
-  return { ok, total, need, lost, done, eligible, vip };
+  const j = m.judge || {};
+  const eligible = done && !lost && (j.result ? /^対象（/.test(j.result) : hits < 2);
+  return { ok, total, need, lost: lost || (done && ok < need), done, eligible, vip, judge: j };
 }
 function stat(x) {
   const m = x.member, today = parseD(DATA.today), st = parseD(m.start);
@@ -94,34 +103,48 @@ function stat(x) {
 function render() {
   const rows = DATA.members.map(x => Object.assign(x, { s: stat(x) }));
   const act = rows.filter(r => r.member.status === '利用中');
-  const counts = { all: rows.length, bad: rows.filter(r => r.s.st === 'bad').length, warn: rows.filter(r => r.s.st === 'warn').length, pending: rows.filter(r => r.member.status === '承認待ち').length };
-  const list = rows.filter(r => FILTER === 'all' || (FILTER === 'pending' ? r.member.status === '承認待ち' : r.s.st === FILTER));
+  const goalWait = r => r.member.goal.targets.length && /確認待ち|見直しをお願い|面談で相談/.test(r.member.goalCheck || '確認待ち') && !/^確定$/.test(r.member.goalCheck);
+  const counts = { all: rows.length, bad: rows.filter(r => r.s.st === 'bad').length, warn: rows.filter(r => r.s.st === 'warn').length, pending: rows.filter(r => r.member.status === '承認待ち').length, goal: rows.filter(goalWait).length };
+  const list = rows.filter(r => FILTER === 'all' || (FILTER === 'pending' ? r.member.status === '承認待ち' : FILTER === 'goal' ? goalWait(r) : r.s.st === FILTER));
   const lbl = { good: '順調', warn: '声かけ候補', bad: '要フォロー', '': '—' };
   $('#view').innerHTML = `<section class="sec" style="margin-top:4px"><div class="sec-h"><h2>会員の取り組み状況</h2><span class="aside">${esc(DATA.today)} 時点・<a href="${esc(DATA.sheetUrl)}" target="_blank" rel="noopener">シートを開く</a></span></div>
   <div class="kpis"><div class="kpi"><div class="v">${act.length}</div><div class="k">利用中</div></div><div class="kpi"><div class="v" style="color:var(--good)">${act.filter(r => r.s.wk >= 3).length}</div><div class="k">今週3日達成</div></div><div class="kpi"><div class="v" style="color:var(--warn)">${counts.warn}</div><div class="k">声かけ候補</div></div><div class="kpi"><div class="v" style="color:var(--bad)">${counts.bad}</div><div class="k">3日以上 未記録</div></div></div>
-  <div class="filters">${[['all', 'すべて'], ['bad', '要フォロー'], ['warn', '声かけ候補'], ['pending', '承認待ち']].map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${FILTER === k}">${l}（${counts[k]}）</button>`).join('')}</div></section>
+  <div class="filters">${[['all', 'すべて'], ['bad', '要フォロー'], ['warn', '声かけ候補'], ['pending', '承認待ち'], ['goal', '目標の確認']].map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${FILTER === k}">${l}（${counts[k]}）</button>`).join('')}</div></section>
   <section class="sec"><div class="card">${list.map(x => card(x, lbl)).join('') || '<p style="padding:14px">該当する会員はいません。</p>'}</div></section>`;
 }
 function card(x, lbl) {
   const m = x.member, s = x.s;
-  return `<div class="mem" data-id="${esc(m.id)}"><div class="nm">${esc(m.name || '（名前未登録）')}<small>${esc(m.plan || '未設定')}</small><small>${esc(m.status)}</small></div><span class="pill ${s.st}">${lbl[s.st] || '—'}</span>
-  <div class="meta"><span>DAY <b>${s.day > 0 ? s.day : '開始前'}</b></span>${(() => { const r = reviewInfo(x); return r ? `<span>見直し <b style="color:${r.late ? 'var(--warn)' : 'inherit'}">${r.late ? r.p + 'ヶ月目 未記入' : '次 ' + md(r.next)}</b></span>` : ''; })()}<span>今週 <b>${s.wk}/3</b>日</span><span>最終記録 <b>${s.last ? (s.gap === 0 ? '今日' : s.gap + '日前') : 'なし'}</b></span><span>サポート終了 <b>${md(s.end)}${/延長する/.test(m.extension) ? '（延長）' : ''}</b></span>${(() => { const g = gtee(x); return g ? `<span>延長保証 <b style="color:${g.eligible ? 'var(--good)' : g.lost ? 'var(--bad)' : 'inherit'}">${g.ok}/${g.total}週${g.eligible ? '・対象' : g.lost ? '・対象外' : ''}</b></span>` : ''; })()}${m.plan === 'VIP' ? `<span>次のZoom <b>${esc(m.zoomAt || '未定')}</b></span>` : ''}</div>
+  return `<div class="mem" data-id="${esc(m.id)}"><div class="nm">${esc(m.name || '（名前未登録）')}<small>${esc(m.plan || '未設定')}</small><small>${esc(m.status)}</small>${m.goal.targets.length ? `<small style="color:${m.goalCheck === '確定' ? 'var(--good)' : 'var(--warn)'}">目標：${esc(m.goalCheck || '確認待ち')}</small>` : ''}</div><span class="pill ${s.st}">${lbl[s.st] || '—'}</span>
+  <div class="meta"><span>DAY <b>${s.day > 0 ? s.day : '開始前'}</b></span>${(() => { const r = reviewInfo(x); return r ? `<span>見直し <b style="color:${r.late ? 'var(--warn)' : 'inherit'}">${r.late ? r.p + 'ヶ月目 未記入' : '次 ' + md(r.next)}</b></span>` : ''; })()}<span>今週 <b>${s.wk}/3</b>日</span><span>最終記録 <b>${s.last ? (s.gap === 0 ? '今日' : s.gap + '日前') : 'なし'}</b></span><span>サポート終了 <b>${md(s.end)}${/延長する/.test(m.extension) ? '（延長）' : ''}</b></span>${(() => { const g = gtee(x); return g ? `<span>延長保証 <b style="color:${g.eligible ? 'var(--good)' : g.lost ? 'var(--bad)' : 'inherit'}">${g.ok}/${g.total}週${g.eligible ? '・対象' : g.lost ? '・対象外' : ''}${g.judge.at ? '・測定済み' : ''}</b></span>` : ''; })()}<span>受講期間 <b>${esc(x.courseEnd || '—')}まで${x.courseOver ? '（終了）' : ''}</b></span>${m.plan === 'VIP' ? `<span>次のZoom <b>${esc(m.zoomAt || '未定')}</b></span>` : ''}</div>
   <div class="spark" aria-label="直近4週の記録">${s.pat.map(c => `<i class="${c}"></i>`).join('')}</div>
   ${OPEN === m.id ? detail(x) : ''}</div>`;
 }
 function detail(x) {
   const m = x.member, recs = x.records.slice(-14).reverse();
   const f = String(m.fields || '体重(kg)／痛み(0-10)／睡眠(時間)').split(/[／\/]/).slice(0, 3);
-  return `<div class="det" onclick="event.stopPropagation()">
+  return `<div class="det">
   <div><b>MY GOAL：</b>${esc(m.goal.scene || '未設定')}<br>${m.goal.targets.map(t => `${esc(t.label)}：${t.start ?? '—'} → ${t.target ?? '—'}`).join('／')}</div>
+  ${m.goal.targets.length ? `<div class="gc"><b>目標の確認</b>：${esc(m.goalCheck || '確認待ち')}${m.goalCheckAt ? '（' + esc(m.goalCheckAt) + '）' : ''}
+    <input type="text" id="gc-memo" placeholder="会員へのひとこと（任意・会員の画面に出ます）" value="">
+    <div class="gc-btns"><button type="button" data-gc="確定">確定する</button><button type="button" data-gc="見直しをお願い">見直しをお願い</button><button type="button" data-gc="面談で相談">面談で相談</button></div></div>` : ''}
+  ${(x.goalLog || []).length ? `<div class="scroll"><b>目標の変更履歴</b><table><thead><tr><th>変更日</th><th>期</th><th>目標</th><th>状態</th><th>確認日</th><th>メモ</th></tr></thead><tbody>${x.goalLog.slice().reverse().map(g => `<tr><td>${esc(g.date)}</td><td>${g.cycle}</td><td style="white-space:normal">${g.targets.map(t => `${esc(t.label)}：${t.start ?? '—'}→${t.target ?? '—'}`).join('<br>')}</td><td>${esc(g.status)}</td><td>${esc(g.checkedAt)}</td><td style="white-space:normal">${esc(g.memo)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+  ${m.judge && m.judge.at ? `<div><b>延長保証の測定（${esc(m.judge.at)}）</b><br>${esc(m.judge.values)}<br>記録：${esc(m.judge.weeks)}<br>判定：<b>${esc(m.judge.result)}</b><br><small>対象なら「延長希望」を「延長する」にして、7日以内に公式LINEで結果を伝えてください。</small></div>` : ''}
   <div class="scroll"><table><thead><tr><th>日付</th><th>DAY</th><th>ストレッチ</th><th>トレ</th><th>動画</th><th>鏡</th>${f.map(x => `<th>${esc(x)}</th>`).join('')}<th>ひとこと</th></tr></thead><tbody>${recs.map(r => `<tr><td>${esc(r.date)}</td><td>${r.day ?? ''}</td><td>${esc([r.s1, r.s2].filter(Boolean).join('・'))}</td><td>${esc(r.train)}</td><td>${esc(r.watched)}</td><td>${esc(r.mirror)}</td>${[0, 1, 2].slice(0, f.length).map(i => `<td>${r.v[i] ?? ''}</td>`).join('')}<td style="white-space:normal">${esc(r.note)}</td></tr>`).join('')}</tbody></table></div>
   ${(x.months || []).length ? `<div class="scroll"><b>毎月の中間目標と見直し</b><table><thead><tr><th>月</th><th>見直し日</th>${m.goal.targets.map(t => `<th>${esc(t.label)} 中間→実績</th>`).join('')}<th>達成</th><th>うまくいった</th><th>うまくいかなかった</th><th>来月の工夫</th></tr></thead><tbody>${x.months.map(r => `<tr><td>第${Math.ceil(r.n / 6)}期 ${((r.n - 1) % 6) + 1}ヶ月目</td><td>${esc(r.date)}</td>${m.goal.targets.map((t, i) => `<td>${r.targets[i] ?? '—'} → ${r.actual[i] ?? (r.doneAt ? '—' : '')}</td>`).join('')}<td>${r.doneAt ? (r.hit ?? '—') + '/' + m.goal.targets.length : '未記入'}</td><td style="white-space:normal;min-width:120px">${esc(r.good)}</td><td style="white-space:normal;min-width:120px">${esc(r.bad)}</td><td style="white-space:normal;min-width:120px">${esc(r.next)}</td></tr>`).join('')}</tbody></table></div>` : ''}
   <div><b>姿勢写真</b><div class="phs">${x.photos.map(p => ['front', 'side'].filter(k => p[k]).map(k => PH[p[k]] ? `<figure style="margin:0"><img src="${PH[p[k]]}" alt=""><figcaption style="font-size:11px">第${Math.max(1, Math.ceil(p.day / 7))}週（DAY${p.day}）${k === 'front' ? '正面' : '横'}</figcaption></figure>` : `<button type="button" data-ph="${esc(p[k])}">第${Math.max(1, Math.ceil(p.day / 7))}週（DAY${p.day}）${k === 'front' ? '正面' : '横'}を表示</button>`).join('')).join('') || 'まだありません'}</div></div></div>`;
 }
 document.addEventListener('click', async e => {
   const f = e.target.closest('[data-f]'); if (f) { FILTER = f.dataset.f; render(); return; }
+  const gc = e.target.closest('[data-gc]');
+  if (gc) {
+    const memo = ($('#gc-memo') || {}).value || '';
+    gc.textContent = '保存中…';
+    try { await api('adminGoal', { id: OPEN, status: gc.dataset.gc, memo: memo.trim() }); DATA = await api('admin'); render(); }
+    catch (err) { gc.textContent = err.message === 'unknown_action' ? 'Apps Scriptを更新してください' : '保存できませんでした'; }
+    return;
+  }
   const ph = e.target.closest('[data-ph]'); if (ph) { ph.textContent = '読み込み中…'; try { PH[ph.dataset.ph] = (await api('adminPhoto', { fileId: ph.dataset.ph })).dataUrl; } catch (err) { ph.textContent = '表示できませんでした'; return; } render(); return; }
-  const m = e.target.closest('.mem'); if (m) { OPEN = OPEN === m.dataset.id ? null : m.dataset.id; render(); }
+  const m = e.target.closest('.mem'); if (m && !e.target.closest('.det')) { OPEN = OPEN === m.dataset.id ? null : m.dataset.id; render(); }
 });
 load();
 })();

@@ -226,6 +226,7 @@ nav.tabs div{display:flex;max-width:560px;width:100%;justify-content:space-aroun
 nav.tabs button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:700;color:var(--faint);padding:4px 6px;border-radius:12px;min-width:56px}
 nav.tabs svg{width:22px;height:22px}
 nav.tabs button[aria-current="page"]{color:var(--primary)}
+nav.tabs[hidden],nav.tabs button[hidden]{display:none}
 
 /* log */
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:14px}
@@ -431,3 +432,14 @@ nav.tabs button[aria-current="page"]{color:var(--primary)}
 .ph-del button{border:1px solid var(--line);background:var(--surface);color:var(--bad);border-radius:99px;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap}
 .meter .gtee{margin-top:4px;font-size:11px;color:var(--muted)}
 .meter .gtee b{color:var(--ink)}
+/* 目標の確認（契約書 第5条） */
+.gcheck{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--surface2);font-size:12px;line-height:1.6;color:var(--ink)}
+.gcheck b{display:block;font-size:13px}
+.gcheck.good{background:var(--good-soft)} .gcheck.good b{color:var(--good)}
+.gcheck.warn{background:var(--warn-soft)} .gcheck.warn b{color:var(--warn)}
+.gcheck.bad{background:var(--bad-soft)} .gcheck.bad b{color:var(--bad)}
+.gcheck .linkbtn{display:block;margin-top:6px}
+/* 目標の変化 */
+.gh-t{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px;padding:3px 0}
+.gh-t .gh-was{grid-column:1/-1;display:block;color:var(--muted);font-size:11px}
+.rv-hh .pill{margin-left:6px}
