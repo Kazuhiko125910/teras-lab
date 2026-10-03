@@ -10,6 +10,7 @@
  *   ANTHROPIC_API_KEY \u2026 \u98df\u4e8b\u30b5\u30dd\u30fc\u30c8\u306b\u4f7f\u3046AI\u306e\u30ad\u30fc\uff08\u52a0\u85e4\u3055\u3093\u304c\u81ea\u5206\u3067\u5165\u529b\uff09
  *   PHOTO_FOLDER_ID   \u2026 setup \u3067\u81ea\u52d5\u4f5c\u6210\uff08\u59ff\u52e2\u5199\u771f\u306e\u4fdd\u5b58\u5148\u30d5\u30a9\u30eb\u30c0\uff09
  *   LINE_MESSAGING_TOKEN \u2026 \u516c\u5f0fLINE\uff08Messaging API\uff09\u306e\u9577\u671f\u30c1\u30e3\u30cd\u30eb\u30a2\u30af\u30bb\u30b9\u30c8\u30fc\u30af\u30f3\uff08\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\u7528\uff09
+ *   SLACK_WEBHOOK_URL \u2026 Slack\u306e\u901a\u77e5\u5148\uff08Incoming Webhook \u306eURL\u3002\u76ee\u6a19\u306e\u8a2d\u5b9a\u30fb\u5909\u66f4\u3001\u5ef6\u9577\u4fdd\u8a3c\u306e\u6e2c\u5b9a\u3001\u76ee\u6a19\u672a\u8a18\u5165\u306e\u304a\u77e5\u3089\u305b\uff09
  */
 
 const TZ = 'Asia/Tokyo';
@@ -18,6 +19,8 @@ const SOURCE_180DAY_GID = 1146111468;
 const MEAL_MODEL = 'claude-haiku-4-5-20251001';
 const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // \u904b\u55b6\u7528\u30b9\u30d7\u30ec\u30c3\u30c9\u30b7\u30fc\u30c8 Teras_Lab_RESHAPE
 const LIFF_URL = 'https://liff.line.me/2011731827-ZLDHlKTg';
+const ADMIN_URL = 'https://kazuhiko125910.github.io/teras-lab/reshape/admin.html';
+const REMIND_HEAD = ['LINE\u767b\u9332\u65e5', '\u76ee\u6a19\u30ea\u30de\u30a4\u30f3\u30c9\u56de\u6570', '\u76ee\u6a19\u30ea\u30de\u30a4\u30f3\u30c9\u901a\u77e5\u65e5'];
 const MONTH_HEAD = ['\u4f1a\u54e1ID', '\u540d\u524d', '\u671f', '\u6708', '\u898b\u76f4\u3057\u65e5', '\u76ee\u6a191 \u4e2d\u9593', '\u76ee\u6a192 \u4e2d\u9593', '\u76ee\u6a193 \u4e2d\u9593', '\u76ee\u6a191 \u5b9f\u7e3e', '\u76ee\u6a192 \u5b9f\u7e3e', '\u76ee\u6a193 \u5b9f\u7e3e', '\u9054\u6210\u6570', '\u3046\u307e\u304f\u3044\u3063\u305f\u3053\u3068', '\u3046\u307e\u304f\u3044\u304b\u306a\u304b\u3063\u305f\u3053\u3068', '\u6765\u6708\u306e\u5de5\u592b', '\u8a18\u5165\u65e5', 'LINE\u901a\u77e5\u65e5'];
 // \u76ee\u6a19\u306e\u5909\u66f4\u5c65\u6b74\uff08\u5951\u7d04\u66f8 \u7b2c5\u6761\uff1a\u5909\u66f4\u524d\u5f8c\u306e\u76ee\u6a19\u3068\u5909\u66f4\u65e5\u3092\u8a18\u9332\u3057\u3001\u62c5\u5f53\u304c\u78ba\u8a8d\u3057\u3066\u78ba\u5b9a\u3059\u308b\uff09
 const GOAL_HEAD = ['\u4f1a\u54e1ID', '\u540d\u524d', '\u5909\u66f4\u65e5', '\u671f', '\u76ee\u6a191', '\u76ee\u6a191 \u30b9\u30bf\u30fc\u30c8', '\u76ee\u6a191 \u76ee\u6a19\u5024', '\u76ee\u6a192', '\u76ee\u6a192 \u30b9\u30bf\u30fc\u30c8', '\u76ee\u6a192 \u76ee\u6a19\u5024', '\u76ee\u6a193', '\u76ee\u6a193 \u30b9\u30bf\u30fc\u30c8', '\u76ee\u6a193 \u76ee\u6a19\u5024', '\u72b6\u614b', '\u78ba\u8a8d\u65e5', '\u62c5\u5f53\u30e1\u30e2'];
@@ -41,6 +44,7 @@ function doPost(e) {
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad_request' }); }
   try {
     const a = req.action;
+    if (!a && Array.isArray(req.events)) return json_(lineWebhook_(req)); // \u516c\u5f0fLINE\u306e\u53cb\u3060\u3061\u8ffd\u52a0\uff08Webhook\uff09
     if (a === 'admin') return json_(adminData_(req));
     if (a === 'adminPhoto') return json_(adminPhoto_(req));
     if (a === 'adminGoal') return json_(adminGoal_(req));
@@ -96,7 +100,8 @@ function boot_(me, req) {
     if (me.demo) throw new Error('sample_not_found');
     // \u306f\u3058\u3081\u3066\u958b\u3044\u305f\u4eba\uff1a\u627f\u8a8d\u5f85\u3061\u3068\u3057\u3066\u767b\u9332
     const name = String(req.displayName || me.name || '');
-    appendRow_(SH.member, { '\u4f1a\u54e1ID': me.id, '\u540d\u524d': name, 'LINE\u8868\u793a\u540d': name, '\u5229\u7528': '\u627f\u8a8d\u5f85\u3061', '\u30e1\u30e2': '\u81ea\u52d5\u767b\u9332 ' + now_() });
+    ensureHeaders_(SH.member, REMIND_HEAD);
+    appendRow_(SH.member, { '\u4f1a\u54e1ID': me.id, '\u540d\u524d': name, 'LINE\u8868\u793a\u540d': name, '\u5229\u7528': '\u627f\u8a8d\u5f85\u3061', 'LINE\u767b\u9332\u65e5': fmtDate_(new Date()), '\u30e1\u30e2': '\u81ea\u52d5\u767b\u9332 ' + now_() });
     m = table_(SH.member).rows.find(r => String(r['\u4f1a\u54e1ID']) === me.id);
   }
   return {
@@ -329,6 +334,19 @@ function saveGoal_(me, req) {
       log['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024'] = t[i] ? t[i].target : '';
     }
     appendRow_(SH.goalLog, log);
+    if (!me.demo) {
+      const first = oldKey === '[]';
+      const newCycle = (Number(g.cycle) || 1) > (Number(before['\u76ee\u6a19\u306e\u671f']) || 1);
+      const kind = first ? '\u521d\u56de\u306e\u76ee\u6a19\u8a2d\u5b9a' : newCycle ? '\u7b2c' + (Number(g.cycle) || 1) + '\u671f\u306e\u76ee\u6a19' : '\u76ee\u6a19\u306e\u5909\u66f4';
+      const lines = t.slice(0, 3).map((x, i) => {
+        const was = !first && !newCycle && before['\u5352\u696d\u76ee\u6a19' + (i + 1)] && String(before['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024']) !== String(x.target) ? '\uff08\u524d\u56de\u306e\u76ee\u6a19 ' + before['\u76ee\u6a19' + (i + 1) + ' \u76ee\u6a19\u5024'] + '\uff09' : '';
+        return '\u2022 ' + sesc_(x.label) + '\uff1a' + x.start + ' \u2192 *' + x.target + '*' + was;
+      });
+      notify_(':dart: *' + sesc_(memberName_(before)) + '\u3055\u3093\u304c\u76ee\u6a19\u3092\u4fdd\u5b58\u3057\u307e\u3057\u305f*\uff08' + sesc_(String(before['\u30d7\u30e9\u30f3'] || '\u30d7\u30e9\u30f3\u672a\u8a2d\u5b9a')) + '\u30fb' + kind + '\uff09\n'
+        + (g.scene ? '6\u30f6\u6708\u5f8c\u306e\u7406\u60f3\u306e\u5834\u9762\uff1a' + sesc_(g.scene) + '\n' : '')
+        + lines.join('\n') + '\n'
+        + '<' + ADMIN_URL + '|\u7ba1\u7406\u8005\u30da\u30fc\u30b8>\u3067\u300c\u78ba\u5b9a\u3059\u308b\uff0f\u898b\u76f4\u3057\u3092\u304a\u9858\u3044\uff0f\u9762\u8ac7\u3067\u76f8\u8ac7\u300d\u3092\u9078\u3093\u3067\u304f\u3060\u3055\u3044');
+    }
   }
   // \u6bce\u6708\u306e\u4e2d\u9593\u76ee\u6a19
   const ms = Array.isArray(g.milestones) ? g.milestones : [];
@@ -396,6 +414,12 @@ function saveJudge_(me, req) {
     '\u5ef6\u9577\u4fdd\u8a3c \u8a18\u9332\u9031\u6570': w.ok + '/' + w.total + '\u9031\uff08\u6761\u4ef6 ' + w.need + '\u9031\u4ee5\u4e0a\uff09',
     '\u5ef6\u9577\u4fdd\u8a3c \u5224\u5b9a': result
   });
+  if (!me.demo) {
+    const r2 = findMember_(me.id);
+    notify_(':memo: *' + sesc_(memberName_(r2)) + '\u3055\u3093\u304c\u5ef6\u9577\u4fdd\u8a3c\u306e\u6e2c\u5b9a\u5024\u3092\u9001\u308a\u307e\u3057\u305f*\uff08' + sesc_(String(r2['\u30d7\u30e9\u30f3'] || '')) + '\uff09\n'
+      + '\u6e2c\u5b9a\u5024\uff1a' + sesc_(String(r2['\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u5024'])) + '\n\u8a18\u9332\uff1a' + sesc_(String(r2['\u5ef6\u9577\u4fdd\u8a3c \u8a18\u9332\u9031\u6570'])) + '\n\u5224\u5b9a\uff1a*' + sesc_(String(r2['\u5ef6\u9577\u4fdd\u8a3c \u5224\u5b9a'])) + '*\n'
+      + '\u5bfe\u8c61\u306a\u3089\u4f1a\u54e1\u30b7\u30fc\u30c8\u306e\u300c\u5ef6\u9577\u5e0c\u671b\u300d\u3092\u300c\u5ef6\u9577\u3059\u308b\u300d\u306b\u3057\u3066\u30017\u65e5\u4ee5\u5185\u306b\u516c\u5f0fLINE\u3067\u7d50\u679c\u3092\u4f1d\u3048\u3066\u304f\u3060\u3055\u3044\uff08<' + ADMIN_URL + '|\u7ba1\u7406\u8005\u30da\u30fc\u30b8>\uff09');
+  }
   return { ok: true, at: fmtDate_(new Date()) };
 }
 
@@ -445,6 +469,11 @@ function monthlyReminder() {
   Logger.log('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff1a' + sent + '\u4ef6\u9001\u4fe1');
   // \u5931\u6557\u304c\u3042\u308c\u3070\u30a8\u30e9\u30fc\u306b\u3059\u308b \u2192 Google\u304b\u3089\u52a0\u85e4\u3055\u3093\u306b\u30a8\u30e9\u30fc\u901a\u77e5\u30e1\u30fc\u30eb\u304c\u5c4a\u304f
   if (failed.length) throw new Error('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\u3092\u9001\u308c\u306a\u304b\u3063\u305f\u4f1a\u54e1\u304c\u3044\u307e\u3059\uff1a' + failed.join('\u3001'));
+}
+
+/** \u52d5\u4f5c\u78ba\u8a8d\u7528\uff1aSlack\u306b\u30c6\u30b9\u30c8\u306e\u304a\u77e5\u3089\u305b\u30921\u901a\u9001\u308b */
+function testSlack() {
+  Logger.log(notify_(':white_check_mark: RESHAPE\u304b\u3089\u306e\u30c6\u30b9\u30c8\u901a\u77e5\u3067\u3059\u3002\u76ee\u6a19\u306e\u8a2d\u5b9a\u30fb\u5909\u66f4\u3001\u5ef6\u9577\u4fdd\u8a3c\u306e\u6e2c\u5b9a\u3001\u76ee\u6a19\u672a\u8a18\u5165\u306e\u304a\u77e5\u3089\u305b\u304c\u3053\u306e\u30c1\u30e3\u30f3\u30cd\u30eb\u306b\u5c4a\u304d\u307e\u3059\u3002') ? '\u9001\u4fe1\u3057\u307e\u3057\u305f' : '\u9001\u308c\u307e\u305b\u3093\u3067\u3057\u305f\uff08SLACK_WEBHOOK_URL \u3092\u78ba\u8a8d\u3057\u3066\u304f\u3060\u3055\u3044\uff09');
 }
 
 /** \u52d5\u4f5c\u78ba\u8a8d\u7528\uff1a\u4f1a\u54e1\u30b7\u30fc\u30c8\u306e\u300c\u30e1\u30e2\u300d\u306b\u300c\u30c6\u30b9\u30c8\u9001\u4fe1\u300d\u3068\u66f8\u3044\u305f\u4eba\u306b\u3060\u3051\u3001\u898b\u76f4\u3057\u306e\u6848\u5185\u3092\u9001\u308b */
@@ -561,6 +590,89 @@ function meal_(me, req) {
   return { ok: true, reply: reply };
 }
 
+// ============ Slack\u901a\u77e5 ============
+function sesc_(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function memberName_(r) { return String((r && (r['\u540d\u524d'] || r['LINE\u8868\u793a\u540d'])) || '\uff08\u540d\u524d\u672a\u767b\u9332\uff09'); }
+// Slack\u306b\u9001\u308b\u3002\u5c4a\u304b\u306a\u304f\u3066\u3082\u4f1a\u54e1\u306e\u4fdd\u5b58\u306f\u6b62\u3081\u306a\u3044
+function notify_(text) {
+  try {
+    const url = prop_('SLACK_WEBHOOK_URL');
+    if (!url) { Logger.log('SLACK_WEBHOOK_URL \u304c\u672a\u8a2d\u5b9a\u306e\u305f\u3081\u3001Slack\u306b\u9001\u308c\u307e\u305b\u3093\u3067\u3057\u305f'); return false; }
+    const res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ text: text }), muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) { Logger.log('Slack\u3078\u306e\u9001\u4fe1\u306b\u5931\u6557\uff1a' + res.getResponseCode() + ' ' + res.getContentText()); return false; }
+    return true;
+  } catch (e) { Logger.log('Slack\u3078\u306e\u9001\u4fe1\u306b\u5931\u6557\uff1a' + e.message); return false; }
+}
+
+// ============ \u516c\u5f0fLINE\u306e\u53cb\u3060\u3061\u8ffd\u52a0\uff08Webhook\uff09\u2192 \u4f1a\u54e1\u30b7\u30fc\u30c8\u306b\u300c\u627f\u8a8d\u5f85\u3061\u300d\u3067\u767b\u9332\u3057\u3001LINE\u767b\u9332\u65e5\u3092\u6b8b\u3059 ============
+function lineWebhook_(req) {
+  const token = prop_('LINE_MESSAGING_TOKEN');
+  if (!token) return { ok: true };
+  (req.events || []).forEach(ev => {
+    if (!ev || ev.type !== 'follow' || !ev.source || !ev.source.userId) return;
+    const id = String(ev.source.userId);
+    // \u672c\u5f53\u306b\u3053\u306e\u516c\u5f0fLINE\u306e\u53cb\u3060\u3061\u304b\u3092\u3001LINE\u306b\u554f\u3044\u5408\u308f\u305b\u3066\u78ba\u304b\u3081\u308b\uff08\u306a\u308a\u3059\u307e\u3057\u5bfe\u7b56\uff09
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/profile/' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return;
+    const name = String(JSON.parse(res.getContentText()).displayName || '');
+    const date = Utilities.formatDate(new Date(Number(ev.timestamp) || Date.now()), TZ, 'yyyy/MM/dd');
+    ensureHeaders_(SH.member, REMIND_HEAD);
+    const m = findMember_(id);
+    if (m) { if (!m['LINE\u767b\u9332\u65e5']) updateMember_(id, { 'LINE\u767b\u9332\u65e5': date }); return; }
+    appendRow_(SH.member, { '\u4f1a\u54e1ID': id, '\u540d\u524d': name, 'LINE\u8868\u793a\u540d': name, '\u5229\u7528': '\u627f\u8a8d\u5f85\u3061', 'LINE\u767b\u9332\u65e5': date, '\u30e1\u30e2': '\u53cb\u3060\u3061\u8ffd\u52a0 ' + now_() });
+  });
+  return { ok: true };
+}
+
+// ============ \u76ee\u6a19\u304c\u672a\u8a18\u5165\u306e\u4eba\u3092Slack\u3067\u77e5\u3089\u305b\u308b\uff08\u6bce\u671d9\u6642\u306b\u81ea\u52d5\u5b9f\u884c\uff09 ============
+// LINE\u767b\u9332\u65e5\u304b\u30893\u65e5\u305f\u3063\u3066\u3082\u76ee\u6a19\u304c\u672a\u8a18\u5165 \u2192 1\u56de\u76ee\u30017\u65e5\u305f\u3063\u3066\u3082\u672a\u8a18\u5165\uff081\u56de\u76ee\u304b\u30894\u65e5\u4ee5\u4e0a\u3042\u3068\uff09\u2192 2\u56de\u76ee\u3002\u9001\u4fe1\u7528\u306e\u30e1\u30c3\u30bb\u30fc\u30b8\u3082\u4ed8\u3051\u308b
+function goalReminder() {
+  ensureHeaders_(SH.member, REMIND_HEAD);
+  const today = parseYmd_(fmtDate_(new Date()));
+  const items = [];
+  table_(SH.member).rows.forEach(r => {
+    const id = String(r['\u4f1a\u54e1ID'] || '');
+    if (!id || /^SAMPLE-/.test(id)) return;
+    if (/^(\u505c\u6b62|\u7d42\u4e86|\u5352\u696d\u751f)$/.test(String(r['\u5229\u7528'] || ''))) return;
+    if (r['\u5352\u696d\u76ee\u6a191'] || r['\u76ee\u6a19\u8a2d\u5b9a\u65e5']) return;
+    const memo = (String(r['\u30e1\u30e2'] || '').match(/(?:\u81ea\u52d5\u767b\u9332|\u53cb\u3060\u3061\u8ffd\u52a0)\s*(\d{4}\/\d{1,2}\/\d{1,2})/) || [])[1];
+    const reg = parseYmd_(fmtDate_(r['LINE\u767b\u9332\u65e5'])) || parseYmd_(memo);
+    if (!reg) return;
+    const days = Math.round((today - reg) / 864e5);
+    const n = Number(r['\u76ee\u6a19\u30ea\u30de\u30a4\u30f3\u30c9\u56de\u6570']) || 0;
+    const last = parseYmd_(fmtDate_(r['\u76ee\u6a19\u30ea\u30de\u30a4\u30f3\u30c9\u901a\u77e5\u65e5']));
+    const sinceLast = last ? Math.round((today - last) / 864e5) : 999;
+    let step = 0;
+    if (n === 0 && days >= 3) step = 1;
+    else if (n === 1 && days >= 7 && sinceLast >= 4) step = 2;
+    if (step) items.push({ r: r, id: id, reg: reg, days: days, step: step });
+  });
+  if (!items.length) { Logger.log('\u76ee\u6a19\u304c\u672a\u8a18\u5165\u306e\u4eba\u306f\u3044\u307e\u305b\u3093'); return; }
+  const blocks = items.map(x => {
+    const name = memberName_(x.r), plan = String(x.r['\u30d7\u30e9\u30f3'] || '');
+    return '\u2022 *' + sesc_(name) + '\u3055\u3093*' + (plan ? '\uff08' + sesc_(plan) + '\uff09' : '') + '\u3000LINE\u767b\u9332\u65e5 ' + ymd_(x.reg) + '\uff08' + x.days + '\u65e5\u7d4c\u904e\u30fb' + x.step + '\u56de\u76ee\u306e\u304a\u77e5\u3089\u305b\uff09\n'
+      + '\u9001\u4fe1\u7528\u30e1\u30c3\u30bb\u30fc\u30b8\uff1a\n```' + sesc_(goalReminderText_(name, plan, x.step)) + '```';
+  });
+  const ok = notify_(':bell: *\u76ee\u6a19\u306e\u8a18\u5165\u304c\u307e\u3060\u306e\u65b9\u304c\u3044\u307e\u3059\uff08' + items.length + '\u540d\uff09*\n\u4e0b\u306e\u30e1\u30c3\u30bb\u30fc\u30b8\u3092\u30b3\u30d4\u30fc\u3057\u3066\u3001\u305d\u306e\u65b9\u306e\u516c\u5f0fLINE\u306b\u9001\u3063\u3066\u304f\u3060\u3055\u3044\u3002\n\n' + blocks.join('\n\n'));
+  if (ok) items.forEach(x => updateMember_(x.id, { '\u76ee\u6a19\u30ea\u30de\u30a4\u30f3\u30c9\u56de\u6570': x.step, '\u76ee\u6a19\u30ea\u30de\u30a4\u30f3\u30c9\u901a\u77e5\u65e5': fmtDate_(new Date()) }));
+}
+
+function goalReminderText_(name, plan, step) {
+  if (step === 1) {
+    return name + '\u3055\u3093\u3001\u3053\u3093\u306b\u3061\u306f\u3002\u52a0\u30c8\u3061\u3083\u3093\u3067\u3059\ud83d\ude0a\n'
+      + 'Teras Lab. RESHAPE\u3078\u306e\u3054\u767b\u9332\u3001\u3042\u308a\u304c\u3068\u3046\u3054\u3056\u3044\u307e\u3059\uff01\n\n'
+      + '\u6700\u521d\u306e\u30b9\u30c6\u30c3\u30d7\u306e\u300c\u76ee\u6a19\u8a2d\u5b9a\u300d\u306f\u3082\u3046\u958b\u3044\u3066\u307f\u307e\u3057\u305f\u304b\uff1f\n'
+      + '6\u30f6\u6708\u5f8c\u306b\u306a\u308a\u305f\u3044\u81ea\u5206\u3092\u6570\u5b57\u306b\u3057\u3066\u304a\u304f\u3068\u3001\u6bce\u65e5\u306e\u30e1\u30cb\u30e5\u30fc\u304c\u30b9\u30bf\u30fc\u30c8\u3057\u307e\u3059\uff08\u7d0410\u5206\uff09\u3002\n'
+      + (plan === 'VIP' ? '\u521d\u56de\u30ab\u30a6\u30f3\u30bb\u30ea\u30f3\u30b0\u3067\u4e00\u7dd2\u306b\u6700\u7d42\u6c7a\u5b9a\u3059\u308b\u306e\u3067\u3001\u307e\u305a\u306f\u308f\u304b\u308b\u7bc4\u56f2\u3067\u5927\u4e08\u592b\u3067\u3059\u3002\n' : '')
+      + '\n\u25bc \u3053\u3053\u304b\u3089\u958b\u3051\u307e\u3059\n' + LIFF_URL + '\n\n'
+      + '\u9014\u4e2d\u3067\u308f\u304b\u3089\u306a\u3044\u3068\u3053\u308d\u304c\u3042\u308c\u3070\u3001\u3053\u306eLINE\u306b\u6c17\u8efd\u306b\u8fd4\u4fe1\u3057\u3066\u304f\u3060\u3055\u3044\u306d\u3002';
+  }
+  return name + '\u3055\u3093\u3001\u3053\u3093\u306b\u3061\u306f\u3002\u52a0\u30c8\u3061\u3083\u3093\u3067\u3059\u3002\n\n'
+    + '\u76ee\u6a19\u8a2d\u5b9a\u3067\u3001\u8ff7\u3063\u3066\u3044\u308b\u3068\u3053\u308d\u306f\u3042\u308a\u307e\u305b\u3093\u304b\uff1f\n'
+    + '\u300c\u6570\u5b57\u306b\u3059\u308b\u306e\u304c\u96e3\u3057\u3044\u300d\u300c\u4f55\u3092\u76ee\u6a19\u306b\u3057\u305f\u3089\u3044\u3044\u304b\u308f\u304b\u3089\u306a\u3044\u300d\u3068\u3044\u3046\u65b9\u3082\u591a\u3044\u306e\u3067\u3001\u307e\u305a\u306f\u4eca\u3044\u3061\u3070\u3093\u6c17\u306b\u306a\u3063\u3066\u3044\u308b\u3053\u3068\u30921\u3064\u3060\u3051\u3001\u3053\u306eLINE\u306b\u9001\u3063\u3066\u304f\u3060\u3055\u3044\u3002\u305d\u3053\u304b\u3089\u4e00\u7dd2\u306b\u76ee\u6a19\u3092\u8003\u3048\u307e\u3059\ud83d\ude0a\n\n'
+    + '\u25bc \u76ee\u6a19\u8a2d\u5b9a\u306f\u3053\u3061\u3089\n' + LIFF_URL;
+}
+
 // ============ \u7ba1\u7406\u8005 ============
 function checkAdmin_(req) {
   const k = prop_('ADMIN_KEY');
@@ -616,9 +728,9 @@ function adminPhoto_(req) {
 function setup() {
   const ss = ss_();
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '\uff1a' + e.message); } };
-  step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
+  step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN', 'SLACK_WEBHOOK_URL'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('\u898b\u51fa\u3057\u306e\u8ffd\u52a0', () => {
-    ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f'].concat(JUDGE_HEAD));
+    ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f'].concat(JUDGE_HEAD, REMIND_HEAD));
     ensureHeaders_(SH.goalLog, GOAL_HEAD);
     ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
     ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
@@ -646,6 +758,9 @@ function setup() {
   });
   step('\u5199\u771f\u30d5\u30a9\u30eb\u30c0', () => photoRoot_());
   step('\u6708\u306e\u76ee\u6a19\u30b7\u30fc\u30c8', () => { ensureHeaders_(SH.month, MONTH_HEAD); ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f']); const s = ss.getSheetByName(SH.month); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
+  step('\u76ee\u6a19\u672a\u8a18\u5165\u306e\u304a\u77e5\u3089\u305b\uff08\u6bce\u671d9\u6642\u30fbSlack\uff09', () => {
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'goalReminder')) ScriptApp.newTrigger('goalReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
+  });
   step('\u6bce\u6708\u306e\u898b\u76f4\u3057\u30ea\u30de\u30a4\u30f3\u30c9\uff08\u6bce\u671d9\u6642\uff09', () => {
     if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'monthlyReminder')) ScriptApp.newTrigger('monthlyReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
   });

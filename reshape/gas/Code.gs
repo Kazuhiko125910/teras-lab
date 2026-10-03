@@ -10,6 +10,7 @@
  *   ANTHROPIC_API_KEY … 食事サポートに使うAIのキー（加藤さんが自分で入力）
  *   PHOTO_FOLDER_ID   … setup で自動作成（姿勢写真の保存先フォルダ）
  *   LINE_MESSAGING_TOKEN … 公式LINE（Messaging API）の長期チャネルアクセストークン（毎月の見直しリマインド用）
+ *   SLACK_WEBHOOK_URL … Slackの通知先（Incoming Webhook のURL。目標の設定・変更、延長保証の測定、目標未記入のお知らせ）
  */
 
 const TZ = 'Asia/Tokyo';
@@ -18,6 +19,8 @@ const SOURCE_180DAY_GID = 1146111468;
 const MEAL_MODEL = 'claude-haiku-4-5-20251001';
 const SHEET_ID = '15XKWaI3hG0ACJyY4RuLjWOIiUpfGqVTQ4V2qH_ezsUg'; // 運営用スプレッドシート Teras_Lab_RESHAPE
 const LIFF_URL = 'https://liff.line.me/2011731827-ZLDHlKTg';
+const ADMIN_URL = 'https://kazuhiko125910.github.io/teras-lab/reshape/admin.html';
+const REMIND_HEAD = ['LINE登録日', '目標リマインド回数', '目標リマインド通知日'];
 const MONTH_HEAD = ['会員ID', '名前', '期', '月', '見直し日', '目標1 中間', '目標2 中間', '目標3 中間', '目標1 実績', '目標2 実績', '目標3 実績', '達成数', 'うまくいったこと', 'うまくいかなかったこと', '来月の工夫', '記入日', 'LINE通知日'];
 // 目標の変更履歴（契約書 第5条：変更前後の目標と変更日を記録し、担当が確認して確定する）
 const GOAL_HEAD = ['会員ID', '名前', '変更日', '期', '目標1', '目標1 スタート', '目標1 目標値', '目標2', '目標2 スタート', '目標2 目標値', '目標3', '目標3 スタート', '目標3 目標値', '状態', '確認日', '担当メモ'];
@@ -41,6 +44,7 @@ function doPost(e) {
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad_request' }); }
   try {
     const a = req.action;
+    if (!a && Array.isArray(req.events)) return json_(lineWebhook_(req)); // 公式LINEの友だち追加（Webhook）
     if (a === 'admin') return json_(adminData_(req));
     if (a === 'adminPhoto') return json_(adminPhoto_(req));
     if (a === 'adminGoal') return json_(adminGoal_(req));
@@ -96,7 +100,8 @@ function boot_(me, req) {
     if (me.demo) throw new Error('sample_not_found');
     // はじめて開いた人：承認待ちとして登録
     const name = String(req.displayName || me.name || '');
-    appendRow_(SH.member, { '会員ID': me.id, '名前': name, 'LINE表示名': name, '利用': '承認待ち', 'メモ': '自動登録 ' + now_() });
+    ensureHeaders_(SH.member, REMIND_HEAD);
+    appendRow_(SH.member, { '会員ID': me.id, '名前': name, 'LINE表示名': name, '利用': '承認待ち', 'LINE登録日': fmtDate_(new Date()), 'メモ': '自動登録 ' + now_() });
     m = table_(SH.member).rows.find(r => String(r['会員ID']) === me.id);
   }
   return {
@@ -329,6 +334,19 @@ function saveGoal_(me, req) {
       log['目標' + (i + 1) + ' 目標値'] = t[i] ? t[i].target : '';
     }
     appendRow_(SH.goalLog, log);
+    if (!me.demo) {
+      const first = oldKey === '[]';
+      const newCycle = (Number(g.cycle) || 1) > (Number(before['目標の期']) || 1);
+      const kind = first ? '初回の目標設定' : newCycle ? '第' + (Number(g.cycle) || 1) + '期の目標' : '目標の変更';
+      const lines = t.slice(0, 3).map((x, i) => {
+        const was = !first && !newCycle && before['卒業目標' + (i + 1)] && String(before['目標' + (i + 1) + ' 目標値']) !== String(x.target) ? '（前回の目標 ' + before['目標' + (i + 1) + ' 目標値'] + '）' : '';
+        return '• ' + sesc_(x.label) + '：' + x.start + ' → *' + x.target + '*' + was;
+      });
+      notify_(':dart: *' + sesc_(memberName_(before)) + 'さんが目標を保存しました*（' + sesc_(String(before['プラン'] || 'プラン未設定')) + '・' + kind + '）\n'
+        + (g.scene ? '6ヶ月後の理想の場面：' + sesc_(g.scene) + '\n' : '')
+        + lines.join('\n') + '\n'
+        + '<' + ADMIN_URL + '|管理者ページ>で「確定する／見直しをお願い／面談で相談」を選んでください');
+    }
   }
   // 毎月の中間目標
   const ms = Array.isArray(g.milestones) ? g.milestones : [];
@@ -396,6 +414,12 @@ function saveJudge_(me, req) {
     '延長保証 記録週数': w.ok + '/' + w.total + '週（条件 ' + w.need + '週以上）',
     '延長保証 判定': result
   });
+  if (!me.demo) {
+    const r2 = findMember_(me.id);
+    notify_(':memo: *' + sesc_(memberName_(r2)) + 'さんが延長保証の測定値を送りました*（' + sesc_(String(r2['プラン'] || '')) + '）\n'
+      + '測定値：' + sesc_(String(r2['延長保証 測定値'])) + '\n記録：' + sesc_(String(r2['延長保証 記録週数'])) + '\n判定：*' + sesc_(String(r2['延長保証 判定'])) + '*\n'
+      + '対象なら会員シートの「延長希望」を「延長する」にして、7日以内に公式LINEで結果を伝えてください（<' + ADMIN_URL + '|管理者ページ>）');
+  }
   return { ok: true, at: fmtDate_(new Date()) };
 }
 
@@ -445,6 +469,11 @@ function monthlyReminder() {
   Logger.log('毎月の見直しリマインド：' + sent + '件送信');
   // 失敗があればエラーにする → Googleから加藤さんにエラー通知メールが届く
   if (failed.length) throw new Error('毎月の見直しリマインドを送れなかった会員がいます：' + failed.join('、'));
+}
+
+/** 動作確認用：Slackにテストのお知らせを1通送る */
+function testSlack() {
+  Logger.log(notify_(':white_check_mark: RESHAPEからのテスト通知です。目標の設定・変更、延長保証の測定、目標未記入のお知らせがこのチャンネルに届きます。') ? '送信しました' : '送れませんでした（SLACK_WEBHOOK_URL を確認してください）');
 }
 
 /** 動作確認用：会員シートの「メモ」に「テスト送信」と書いた人にだけ、見直しの案内を送る */
@@ -561,6 +590,89 @@ function meal_(me, req) {
   return { ok: true, reply: reply };
 }
 
+// ============ Slack通知 ============
+function sesc_(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function memberName_(r) { return String((r && (r['名前'] || r['LINE表示名'])) || '（名前未登録）'); }
+// Slackに送る。届かなくても会員の保存は止めない
+function notify_(text) {
+  try {
+    const url = prop_('SLACK_WEBHOOK_URL');
+    if (!url) { Logger.log('SLACK_WEBHOOK_URL が未設定のため、Slackに送れませんでした'); return false; }
+    const res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ text: text }), muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) { Logger.log('Slackへの送信に失敗：' + res.getResponseCode() + ' ' + res.getContentText()); return false; }
+    return true;
+  } catch (e) { Logger.log('Slackへの送信に失敗：' + e.message); return false; }
+}
+
+// ============ 公式LINEの友だち追加（Webhook）→ 会員シートに「承認待ち」で登録し、LINE登録日を残す ============
+function lineWebhook_(req) {
+  const token = prop_('LINE_MESSAGING_TOKEN');
+  if (!token) return { ok: true };
+  (req.events || []).forEach(ev => {
+    if (!ev || ev.type !== 'follow' || !ev.source || !ev.source.userId) return;
+    const id = String(ev.source.userId);
+    // 本当にこの公式LINEの友だちかを、LINEに問い合わせて確かめる（なりすまし対策）
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/profile/' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return;
+    const name = String(JSON.parse(res.getContentText()).displayName || '');
+    const date = Utilities.formatDate(new Date(Number(ev.timestamp) || Date.now()), TZ, 'yyyy/MM/dd');
+    ensureHeaders_(SH.member, REMIND_HEAD);
+    const m = findMember_(id);
+    if (m) { if (!m['LINE登録日']) updateMember_(id, { 'LINE登録日': date }); return; }
+    appendRow_(SH.member, { '会員ID': id, '名前': name, 'LINE表示名': name, '利用': '承認待ち', 'LINE登録日': date, 'メモ': '友だち追加 ' + now_() });
+  });
+  return { ok: true };
+}
+
+// ============ 目標が未記入の人をSlackで知らせる（毎朝9時に自動実行） ============
+// LINE登録日から3日たっても目標が未記入 → 1回目、7日たっても未記入（1回目から4日以上あと）→ 2回目。送信用のメッセージも付ける
+function goalReminder() {
+  ensureHeaders_(SH.member, REMIND_HEAD);
+  const today = parseYmd_(fmtDate_(new Date()));
+  const items = [];
+  table_(SH.member).rows.forEach(r => {
+    const id = String(r['会員ID'] || '');
+    if (!id || /^SAMPLE-/.test(id)) return;
+    if (/^(停止|終了|卒業生)$/.test(String(r['利用'] || ''))) return;
+    if (r['卒業目標1'] || r['目標設定日']) return;
+    const memo = (String(r['メモ'] || '').match(/(?:自動登録|友だち追加)\s*(\d{4}\/\d{1,2}\/\d{1,2})/) || [])[1];
+    const reg = parseYmd_(fmtDate_(r['LINE登録日'])) || parseYmd_(memo);
+    if (!reg) return;
+    const days = Math.round((today - reg) / 864e5);
+    const n = Number(r['目標リマインド回数']) || 0;
+    const last = parseYmd_(fmtDate_(r['目標リマインド通知日']));
+    const sinceLast = last ? Math.round((today - last) / 864e5) : 999;
+    let step = 0;
+    if (n === 0 && days >= 3) step = 1;
+    else if (n === 1 && days >= 7 && sinceLast >= 4) step = 2;
+    if (step) items.push({ r: r, id: id, reg: reg, days: days, step: step });
+  });
+  if (!items.length) { Logger.log('目標が未記入の人はいません'); return; }
+  const blocks = items.map(x => {
+    const name = memberName_(x.r), plan = String(x.r['プラン'] || '');
+    return '• *' + sesc_(name) + 'さん*' + (plan ? '（' + sesc_(plan) + '）' : '') + '　LINE登録日 ' + ymd_(x.reg) + '（' + x.days + '日経過・' + x.step + '回目のお知らせ）\n'
+      + '送信用メッセージ：\n```' + sesc_(goalReminderText_(name, plan, x.step)) + '```';
+  });
+  const ok = notify_(':bell: *目標の記入がまだの方がいます（' + items.length + '名）*\n下のメッセージをコピーして、その方の公式LINEに送ってください。\n\n' + blocks.join('\n\n'));
+  if (ok) items.forEach(x => updateMember_(x.id, { '目標リマインド回数': x.step, '目標リマインド通知日': fmtDate_(new Date()) }));
+}
+
+function goalReminderText_(name, plan, step) {
+  if (step === 1) {
+    return name + 'さん、こんにちは。加トちゃんです😊\n'
+      + 'Teras Lab. RESHAPEへのご登録、ありがとうございます！\n\n'
+      + '最初のステップの「目標設定」はもう開いてみましたか？\n'
+      + '6ヶ月後になりたい自分を数字にしておくと、毎日のメニューがスタートします（約10分）。\n'
+      + (plan === 'VIP' ? '初回カウンセリングで一緒に最終決定するので、まずはわかる範囲で大丈夫です。\n' : '')
+      + '\n▼ ここから開けます\n' + LIFF_URL + '\n\n'
+      + '途中でわからないところがあれば、このLINEに気軽に返信してくださいね。';
+  }
+  return name + 'さん、こんにちは。加トちゃんです。\n\n'
+    + '目標設定で、迷っているところはありませんか？\n'
+    + '「数字にするのが難しい」「何を目標にしたらいいかわからない」という方も多いので、まずは今いちばん気になっていることを1つだけ、このLINEに送ってください。そこから一緒に目標を考えます😊\n\n'
+    + '▼ 目標設定はこちら\n' + LIFF_URL;
+}
+
 // ============ 管理者 ============
 function checkAdmin_(req) {
   const k = prop_('ADMIN_KEY');
@@ -616,9 +728,9 @@ function adminPhoto_(req) {
 function setup() {
   const ss = ss_();
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '：' + e.message); } };
-  step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
+  step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN', 'SLACK_WEBHOOK_URL'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('見出しの追加', () => {
-    ensureHeaders_(SH.member, ['目標の期'].concat(JUDGE_HEAD));
+    ensureHeaders_(SH.member, ['目標の期'].concat(JUDGE_HEAD, REMIND_HEAD));
     ensureHeaders_(SH.goalLog, GOAL_HEAD);
     ensureHeaders_(SH.record, ['日付', '会員ID', '名前', 'DAY', '週', 'ストレッチ①', 'ストレッチ②', 'トレーニング', '見た動画', '鏡チェック', '記録1', '記録2', '記録3', 'ひとこと', '保存日時', '目標1 いま', '目標2 いま', '目標3 いま']);
     ensureHeaders_(SH.photo, ['撮影日', '会員ID', '名前', 'DAY', 'タイミング', '正面の写真', '横向きの写真', '担当コメント']);
@@ -646,6 +758,9 @@ function setup() {
   });
   step('写真フォルダ', () => photoRoot_());
   step('月の目標シート', () => { ensureHeaders_(SH.month, MONTH_HEAD); ensureHeaders_(SH.member, ['目標の期']); const s = ss.getSheetByName(SH.month); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
+  step('目標未記入のお知らせ（毎朝9時・Slack）', () => {
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'goalReminder')) ScriptApp.newTrigger('goalReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
+  });
   step('毎月の見直しリマインド（毎朝9時）', () => {
     if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'monthlyReminder')) ScriptApp.newTrigger('monthlyReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
   });
