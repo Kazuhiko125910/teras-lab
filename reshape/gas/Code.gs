@@ -10,7 +10,7 @@
  *   ANTHROPIC_API_KEY … 食事サポートに使うAIのキー（加藤さんが自分で入力）
  *   PHOTO_FOLDER_ID   … setup で自動作成（姿勢写真の保存先フォルダ）
  *   LINE_MESSAGING_TOKEN … 公式LINE（Messaging API）の長期チャネルアクセストークン（毎月の見直しリマインド用）
- *   SLACK_WEBHOOK_URL … Slackの通知先（Incoming Webhook のURL。目標の設定・変更、延長保証の測定、目標未記入のお知らせ）
+ *   SLACK_WEBHOOK_URL … Slackの通知先（Incoming Webhook のURL。目標の設定・変更、延長保証の測定、目標未記入、サポート終了のお知らせ）
  */
 
 const TZ = 'Asia/Tokyo';
@@ -167,6 +167,18 @@ function courseEnd_(r) {
   // VIPは延長保証の測定（26週の終了日から7日以内）が終わるまでは使えるようにする
   const st = parseYmd_(fmtDate_(r['開始日（DAY1）']));
   if (e && st && String(r['プラン'] || '') === 'VIP') { const j = new Date(st.getTime() + 188 * 864e5); if (j > e) e = j; }
+  if (e && String(r['プラン'] || '') === 'VIP' && joining_(r)) e = monthEnd_(supportEnd_(r) || e);
+  return e;
+}
+// 卒業生コミュニティに参加する人は、サポート終了日の月末まで今のサポートを続け、翌月1日から切り替える
+function monthEnd_(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+const joining_ = r => /参加する/.test(String(r['卒業生コミュニティ参加希望'] || '')) && String(r['利用'] || '') !== '卒業生';
+// サポート（チャット）の終了日：STANDARD 3ヶ月・VIP 6ヶ月（延長保証で+3ヶ月、コミュニティ参加なら月末まで）
+function supportEnd_(r) {
+  const vip = String(r['プラン'] || '') === 'VIP';
+  let e = parseYmd_(fmtDate_(r[vip ? '6ヶ月の日（支払日から）' : '3ヶ月の日（支払日から）']));
+  if (!e) return null;
+  if (/延長する/.test(String(r['延長希望'] || ''))) e = addMonths_(e, 3);
   return e;
 }
 // 受講期間が終わり、卒業生コミュニティにも参加していない（＝会員サイトの利用を終了する）
@@ -195,7 +207,9 @@ function recordWeeks_(m, recRows) {
     if (w >= 1 && w <= total) cnt[w] = (cnt[w] || 0) + 1;
   });
   let ok = 0; for (let w = 1; w <= total; w++) if ((cnt[w] || 0) >= 3) ok++;
-  return { ok: ok, total: total, need: need };
+  // 救済ルール（契約書 第9条）：判定期間の最後の4週間すべてで週3日以上なら、記録の条件を満たしたものとして扱う
+  let last4 = true; for (let w = total - 3; w <= total; w++) if ((cnt[w] || 0) < 3) last4 = false;
+  return { ok: ok, total: total, need: need, last4: last4, pass: ok >= need || last4 };
 }
 
 function monthOut_(r) {
@@ -406,12 +420,12 @@ function saveJudge_(me, req) {
   const goals = confirmed.length ? confirmed[confirmed.length - 1].targets : cur;
   const hit = goals.filter((t, i) => vals[i] != null && t.start != null && t.target != null && (t.target < t.start ? vals[i] <= t.target : vals[i] >= t.target)).length;
   const w = recordWeeks_(m, table_(SH.record).rows);
-  const result = w.ok < w.need ? '対象外（記録の週数が不足）' : hit >= 2 ? '対象外（卒業目標を達成）' : '対象（延長の手続きをする）';
+  const result = !w.pass ? '対象外（記録の週数が不足）' : hit >= 2 ? '対象外（卒業目標を達成）' : '対象（延長の手続きをする）';
   ensureHeaders_(SH.member, JUDGE_HEAD);
   updateMember_(me.id, {
     '延長保証 測定日': fmtDate_(new Date()),
     '延長保証 測定値': goals.map((t, i) => t.label + '：' + (vals[i] == null ? '—' : vals[i]) + '（目標 ' + (t.target == null ? '—' : t.target) + '）').join('／'),
-    '延長保証 記録週数': w.ok + '/' + w.total + '週（条件 ' + w.need + '週以上）',
+    '延長保証 記録週数': w.ok + '/' + w.total + '週（条件 ' + w.need + '週以上）' + (w.ok < w.need && w.last4 ? '・最後の4週間をすべて達成' : ''),
     '延長保証 判定': result
   });
   if (!me.demo) {
@@ -680,6 +694,92 @@ function goalReminderText_(name, plan, step) {
     + '\n▼ 目標設定はこちら\n' + LIFF_URL;
 }
 
+// ============ サポート終了のお知らせ（毎朝9時に自動実行・Slack） ============
+// 終了の30日前・7日前・当日に、送信用メッセージつきで知らせる。コミュニティに参加する人は、月末のつなぎ期間の終わりにも知らせる
+const END_HEAD = ['終了案内 30日前', '終了案内 7日前', '終了案内 当日', '終了案内 切り替え'];
+function supportReminder() {
+  ensureHeaders_(SH.member, END_HEAD);
+  const today = parseYmd_(fmtDate_(new Date()));
+  const recs = table_(SH.record).rows;
+  const items = [];
+  table_(SH.member).rows.forEach(r => {
+    const id = String(r['会員ID'] || '');
+    if (!id || /^SAMPLE-/.test(id) || String(r['利用'] || '') !== '利用中') return;
+    const end = supportEnd_(r); if (!end) return;
+    const left = Math.round((end - today) / 864e5);
+    let step = '';
+    if (joining_(r) && Math.round((today - monthEnd_(end)) / 864e5) >= 0 && !r['終了案内 切り替え']) step = '切り替え';
+    else if (left <= 0 && left > -7 && !r['終了案内 当日']) step = '当日';
+    else if (left > 0 && left <= 7 && !r['終了案内 7日前']) step = '7日前';
+    else if (left > 7 && left <= 30 && !r['終了案内 30日前']) step = '30日前';
+    if (step) items.push({ r: r, id: id, end: end, left: left, step: step, w: recordWeeks_(r, recs) });
+  });
+  if (!items.length) { Logger.log('サポート終了のお知らせはありません'); return; }
+  const label = { '30日前': '終了の30日前', '7日前': '終了の7日前', '当日': '終了日当日', '切り替え': 'コミュニティへの切り替え' };
+  const blocks = items.map(x => {
+    const r = x.r, name = memberName_(r), plan = String(r['プラン'] || ''), ext = /延長する/.test(String(r['延長希望'] || ''));
+    const comm = String(r['卒業生コミュニティ参加希望'] || '未確認');
+    const st = parseYmd_(fmtDate_(r['開始日（DAY1）'])), periodOver = st && Math.round((today - st) / 864e5) + 1 > x.w.total * 7;
+    const judged = String(r['延長保証 判定'] || '');
+    const g = ext ? '延長中' : judged ? judged : x.w.pass ? '記録の条件をクリア（' + x.w.ok + '/' + x.w.total + '週）・測定待ち' : periodOver ? '対象外（記録の週数が不足）' : '記録 ' + x.w.ok + '/' + x.w.total + '週（条件 ' + x.w.need + '週。最後の4週間すべて週3日以上でも対象）';
+    x.pending = !ext && !judged && x.w.pass;
+    let todo = '';
+    if (x.step === '7日前') todo = '\n→ 返信で参加の意思を確認したら、会員シートの「卒業生コミュニティ参加希望」を「参加する」または「参加しない」にしてください';
+    if (x.step === '当日' && !joining_(r)) todo = x.pending ? '\n→ 延長保証の判定待ちです。判定が出るまでは受講生専用LINEでのやり取りを続けてください' : '\n→ 受講生専用LINEでのやり取りは終了です（ブロックはせず、返信しない運用で大丈夫です）';
+    if (x.step === '切り替え') todo = '\n→ 会員シートの「利用」を「卒業生」にして、卒業生コミュニティの決済（毎月1日）を開始してください';
+    return '• *' + sesc_(name) + 'さん*（' + sesc_(plan) + '）　' + label[x.step] + '：サポート終了日 ' + ymd_(x.end)
+      + '\n延長保証：' + g + '　卒業生コミュニティ：' + sesc_(comm) + todo
+      + (x.step === '切り替え' ? '' : '\n送信用メッセージ：\n```' + sesc_(supportReminderText_(r, x)) + '```');
+  });
+  const ok = notify_(':hourglass_flowing_sand: *サポート期間のお知らせ（' + items.length + '名）*\n下のメッセージをコピーして、その方の公式LINEに送ってください。\n\n' + blocks.join('\n\n'));
+  if (ok) items.forEach(x => { const u = {}; u['終了案内 ' + x.step] = fmtDate_(new Date()); updateMember_(x.id, u); });
+}
+
+function supportReminderText_(r, x) {
+  const name = memberName_(r), vip = String(r['プラン'] || '') === 'VIP', ext = /延長する/.test(String(r['延長希望'] || ''));
+  const md = d => (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  const what = ext ? '延長サポート' : vip ? 'サポート期間' : 'チャットでのサポート';
+  const endWhat = ext ? '延長サポート' : vip ? 'サポート' : 'チャットでのサポート';
+  const me = monthEnd_(x.end), next = new Date(me.getFullYear(), me.getMonth() + 1, 1);
+  const course = courseEnd_(r);
+  if (x.step === '30日前') {
+    return name + 'さん、こんにちは。加トちゃんです😊\n'
+      + 'RESHAPEの' + what + 'も、残り1ヶ月になりました（' + md(x.end) + 'まで）。\n\n'
+      + 'ここまで続けてきたこと、本当にすごいです。\nラスト1ヶ月、一緒にいい形で締めくくりましょう！\n\n'
+      + (ext ? ''
+        : '【延長保証について】\nこの最後の1ヶ月、毎週3日以上の記録を続けてもらえたら、延長保証の対象になります。\n'
+          + '期間が終わったあとに測定値を入力して、目標に届いていなかった場合は、サポートを3ヶ月無料で延長します。\n'
+          + '（記録は、ストレッチかトレーニングにチェックを入れて、その日のうちに保存した日が数えられます）\n\n')
+      + '▼ 今日のメニューはこちら\n' + LIFF_URL + '\n\n気になることがあれば、このLINEで気軽に聞いてくださいね。';
+  }
+  if (x.step === '7日前') {
+    return name + 'さん、こんにちは。加トちゃんです。\n'
+      + 'RESHAPEの' + what + 'は' + md(x.end) + 'までです。残り1週間、ラストスパートです！\n\n'
+      + 'そして、ここからのご案内です。\n'
+      + 'RESHAPEを卒業したあとも、手に入れた体を一緒に保っていけるように「卒業生コミュニティ」を用意しています。\n'
+      + '・動画講座の継続視聴（新しい動画も含む）\n・会員サイトで記録と体の変化の確認\n・月1回のセッション\n・食事写真へのフィードバック\n・勉強会・交流会\n'
+      + '月額10,000円で、それ以外の費用はかかりません。\n\n'
+      + '参加される方は、' + md(x.end) + 'のあとも' + md(me) + 'まで今のサポートをそのまま続けて、' + (next.getMonth() + 1) + '月1日からコミュニティに切り替えます。間が空かないので、そのまま続けられます😊\n\n'
+      + (!ext ? '延長保証の対象になった場合は、延長期間が終わるときにあらためてご案内しますね。\n\n' : '')
+      + '「参加したい」「少し迷っている」どちらでも大丈夫なので、このLINEに返信をもらえるとうれしいです。';
+  }
+  // 当日
+  if (joining_(r)) {
+    return name + 'さん、こんにちは。加トちゃんです。\n'
+      + '本日で、RESHAPEの' + endWhat + 'が終了します。本当におつかれさまでした！\n\n'
+      + '卒業生コミュニティへのご参加、ありがとうございます。\n' + md(me) + 'までは今のサポートをそのまま続けて、' + (next.getMonth() + 1) + '月1日からコミュニティに切り替わります。決済のご案内は、あらためてお送りしますね。\n\n'
+      + 'これからも一緒に続けていきましょう😊';
+  }
+  return name + 'さん、こんにちは。加トちゃんです。\n'
+    + '本日で、RESHAPEの' + endWhat + 'が終了します。' + (vip || ext ? '' : '3ヶ月間、') + '本当におつかれさまでした！\n\n'
+    + 'ここまで続けてきたことは、これからの体の財産になります。\n'
+    + (!vip && !ext && course && course > x.end ? '会員サイトと動画は' + md(course) + 'まで引き続き使えるので、記録はこのまま続けてくださいね。\n' : '')
+    + (x.pending
+      ? '\n延長保証の記録の条件をクリアしています🎉\n会員サイトに出る「延長保証の測定」から、受講開始時と同じ方法で測った数値を入力してください。結果は7日以内にこのLINEでお知らせします。\n'
+      : '\nこのLINEでのご質問へのお返事は、本日で終了となります。\n')
+    + '卒業生コミュニティには、あとからでも参加できます。続けたくなったときは、いつでも声をかけてください😊';
+}
+
 // ============ 管理者 ============
 function checkAdmin_(req) {
   const k = prop_('ADMIN_KEY');
@@ -765,6 +865,10 @@ function setup() {
   });
   step('写真フォルダ', () => photoRoot_());
   step('月の目標シート', () => { ensureHeaders_(SH.month, MONTH_HEAD); ensureHeaders_(SH.member, ['目標の期']); const s = ss.getSheetByName(SH.month); s.setFrozenRows(1); s.getRange(1, 1, 1, s.getLastColumn()).setFontWeight('bold').setBackground('#E2EEE9'); });
+  step('サポート終了のお知らせ（毎朝9時・Slack）', () => {
+    ensureHeaders_(SH.member, END_HEAD);
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'supportReminder')) ScriptApp.newTrigger('supportReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
+  });
   step('目標未記入のお知らせ（毎朝9時・Slack）', () => {
     if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'goalReminder')) ScriptApp.newTrigger('goalReminder').timeBased().everyDays(1).atHour(9).inTimezone(TZ).create();
   });

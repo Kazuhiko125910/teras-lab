@@ -78,7 +78,9 @@ function gtee(x) {
   let ok = 0; for (let w = 1; w <= doneW; w++) if ((cnt[w] || 0) >= 3) ok++;
   const done = week > total;
   if (x.weeks && done) ok = x.weeks.ok; // 判定期間が終わったら、全期間の記録で数えた裏側の値を使う
-  const miss = doneW - ok, lost = miss > total - need;
+  let last4 = true; for (let w = total - 3; w <= Math.min(doneW, total); w++) if ((cnt[w] || 0) < 3) last4 = false;
+  if (x.weeks && done) last4 = !!x.weeks.last4;
+  const miss = doneW - ok, lost = miss > total - need && !last4;
   const tg = m.goal.targets, recs = x.records;
   const nowOf = i => { for (let j = recs.length - 1; j >= 0; j--) { const v = recs[j].g && recs[j].g[i] != null ? recs[j].g[i] : null; if (v != null) return v; } return null; };
   const hit = tg.filter((t, i) => { const v = nowOf(i); return v != null && t.start != null && t.target != null && (t.target < t.start ? v <= t.target : v >= t.target); }).length;
@@ -86,7 +88,7 @@ function gtee(x) {
   const hits = fin && fin.hit != null ? fin.hit : hit;
   const j = m.judge || {};
   const eligible = done && !lost && (j.result ? /^対象（/.test(j.result) : hits < 2);
-  return { ok, total, need, lost: lost || (done && ok < need), done, eligible, vip, judge: j };
+  return { ok, total, need, lost: lost || (done && ok < need && !last4), done, eligible, vip, judge: j };
 }
 function stat(x) {
   const m = x.member, today = parseD(DATA.today), st = parseD(m.start);
