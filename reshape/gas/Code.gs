@@ -138,6 +138,7 @@ function memberOut_(r) {
     fields: String(r['毎日の記録項目'] || ''),
     goalCycle: num_(r['目標の期']) || (goals.length ? 1 : 0),
     goalCheck: String(r['目標の確認'] || ''), goalCheckAt: fmtDate_(r['目標の確認日']),
+    noLimit: noLimit_(r),
     judge: {
       at: fmtDate_(r['延長保証 測定日']), values: String(r['延長保証 測定値'] || ''),
       weeks: String(r['延長保証 記録週数'] || ''), result: String(r['延長保証 判定'] || '')
@@ -174,7 +175,10 @@ function courseEnd_(r) {
 function monthEnd_(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
 const joining_ = r => /参加する/.test(String(r['卒業生コミュニティ参加希望'] || '')) && String(r['利用'] || '') !== '卒業生';
 // サポート（チャット）の終了日：STANDARD 3ヶ月・VIP 6ヶ月（延長保証で+3ヶ月、コミュニティ参加なら月末まで）
+// 「サポート期限」が「なし」の人（0期生など）は、期限・終了のお知らせ・延長保証の対象外にして、ずっと使えるようにする
+function noLimit_(r) { return /なし/.test(String(r['サポート期限'] || '')); }
 function supportEnd_(r) {
+  if (noLimit_(r)) return null;
   const vip = String(r['プラン'] || '') === 'VIP';
   let e = parseYmd_(fmtDate_(r[vip ? '6ヶ月の日（支払日から）' : '3ヶ月の日（支払日から）']));
   if (!e) return null;
@@ -186,6 +190,7 @@ function courseOver_(r) {
   const s = String(r['利用'] || '');
   if (s === '卒業生') return false;
   if (s === '終了') return true;
+  if (noLimit_(r)) return false;
   const e = courseEnd_(r);
   return !!(e && ymd_(e) < ymd_(new Date()));
 }
@@ -837,7 +842,7 @@ function setup() {
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '：' + e.message); } };
   step('プロパティの枠', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN', 'SLACK_WEBHOOK_URL'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('見出しの追加', () => {
-    ensureHeaders_(SH.member, ['目標の期'].concat(JUDGE_HEAD, REMIND_HEAD));
+    ensureHeaders_(SH.member, ['目標の期'].concat(JUDGE_HEAD, REMIND_HEAD, ['サポート期限']));
     ensureHeaders_(SH.goalLog, GOAL_HEAD);
     ensureHeaders_(SH.record, ['日付', '会員ID', '名前', 'DAY', '週', 'ストレッチ①', 'ストレッチ②', 'トレーニング', '見た動画', '鏡チェック', '記録1', '記録2', '記録3', 'ひとこと', '保存日時', '目標1 いま', '目標2 いま', '目標3 いま']);
     ensureHeaders_(SH.photo, ['撮影日', '会員ID', '名前', 'DAY', 'タイミング', '正面の写真', '横向きの写真', '担当コメント']);
@@ -850,6 +855,7 @@ function setup() {
     put('プラン', ['STANDARD', 'VIP']);
     put('利用', ['承認待ち', '利用中', '卒業生', '終了', '停止']);
     put('延長希望', ['延長する', '延長しない', '未確認']);
+    put('サポート期限', ['なし']);
     put('卒業生コミュニティ参加希望', ['参加する', '参加しない', '未確認']);
     put('目標の確認', GOAL_CHECK);
     ms.setFrozenColumns(2);

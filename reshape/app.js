@@ -117,6 +117,7 @@ const isAlum = () => S.data.member.status === '卒業生'; // 卒業生コミュ
 // 受講期間の終わり（契約書 第6条・第10条）：支払日から6ヶ月。VIPで延長保証を受けた場合は9ヶ月
 function courseEnd() {
   const m = S.data.member;
+  if (m.noLimit) return null;
   let e = parseD(m.end6);
   if (!e) { const st = parseD(m.start); if (st) e = addDays(st, 181); }
   if (e && m.plan === 'VIP' && /延長する/.test(m.extension)) e = addMonths(e, 3);
@@ -131,6 +132,7 @@ function courseOver() { if (isAlum()) return false; const e = courseEnd(); retur
 
 function supportEnd() {
   const m = S.data.member;
+  if (m.noLimit) return null; // サポート期限なし（0期生など）
   let e = parseD(m.plan === 'VIP' ? m.end6 : m.end3);
   if (!e) return null;
   if (/延長する/.test(m.extension)) e = addMonths(e, 3);
@@ -332,6 +334,7 @@ function judgeWin() {
 }
 function judgeCard() {
   if (!mStart() || !goalSet()) return '';
+  if (S.data.member.noLimit) return '';
   const J = judgeWin(); if (!J.open || !J.pass) return '';
   const g = S.data.member.goal, jd = S.data.member.judge || {};
   if (jd.at && !S.jEdit) return `<section class="rv-card"><div><b>延長保証の測定値を受け付けました（${esc(jd.at)}）</b><p>判定の結果は、7日以内に担当から公式LINEでお知らせします。${J.deadline ? md(J.deadline) + 'までは入力し直せます。' : ''}</p></div><button type="button" class="btn ghost" id="judge-edit">入力し直す</button></section>`;
@@ -481,7 +484,7 @@ function vToday() {
   const tw = String(P.R.freq || '');
   return hero() + reviewCard() + judgeCard() + `
   <div class="meter"><div class="dots" aria-label="今週の記録 ${wr}日">${[1, 2, 3].map(i => `<span class="${i <= wr ? 'on' : ''}">${i <= wr ? '✓' : i}</span>`).join('')}</div>
-    <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${wr >= 3 ? '今週の延長保証ラインをクリアしました' : 'あと' + (3 - wr) + '日で今週の延長保証ラインをクリア'}</p><p class="gtee" style="margin-top:2px">ストレッチかトレーニングにチェックを入れて、その日のうちに保存した日が数えられます</p>${(() => { const g = guarantee(); if (S.week < 1 || g.over) return ''; return `<p class="gtee">延長保証：クリアした週 <b class="num">${g.ok}</b> / ${g.total}週（条件 ${g.need}週以上）${g.lost ? '<br>条件には届きませんでしたが、ここからの積み重ねが結果につながります' : g.rescue ? '<br><b>最後の4週間（第' + (g.total - 3) + '〜' + g.total + '週）すべてで週3日以上</b>記録すれば、延長保証の対象になります' : g.left <= 1 ? '<br><b>あと' + g.left + '週まで</b>お休みしても条件を満たせます' : ''}</p>`; })()}</div></div>
+    <div><b>今週 ${Math.min(wr, 7)}/3日 記録</b><p>${(() => { const k = S.data.member.noLimit ? '目標（週3日）' : '延長保証ライン'; return wr >= 3 ? '今週の' + k + 'をクリアしました' : 'あと' + (3 - wr) + '日で今週の' + k + 'をクリア'; })()}</p><p class="gtee" style="margin-top:2px">ストレッチかトレーニングにチェックを入れて、その日のうちに保存した日が数えられます</p>${(() => { const g = guarantee(); if (S.week < 1 || g.over || S.data.member.noLimit) return ''; return `<p class="gtee">延長保証：クリアした週 <b class="num">${g.ok}</b> / ${g.total}週（条件 ${g.need}週以上）${g.lost ? '<br>条件には届きませんでしたが、ここからの積み重ねが結果につながります' : g.rescue ? '<br><b>最後の4週間（第' + (g.total - 3) + '〜' + g.total + '週）すべてで週3日以上</b>記録すれば、延長保証の対象になります' : g.left <= 1 ? '<br><b>あと' + g.left + '週まで</b>お休みしても条件を満たせます' : ''}</p>`; })()}</div></div>
   ${zoomCard()}${supportBar()}
   <div class="streak"><div class="stat"><div class="v">${streakN}<small>日</small></div><div class="k">連続記録</div></div><div class="stat"><div class="v">${S.data.records.length}<small>日</small></div><div class="k">これまでの記録</div></div><div class="stat"><div class="v">${S.week}<small>/26週</small></div><div class="k">いまの週</div></div></div>
   ${goalCard()}

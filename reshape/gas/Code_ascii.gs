@@ -138,6 +138,7 @@ function memberOut_(r) {
     fields: String(r['\u6bce\u65e5\u306e\u8a18\u9332\u9805\u76ee'] || ''),
     goalCycle: num_(r['\u76ee\u6a19\u306e\u671f']) || (goals.length ? 1 : 0),
     goalCheck: String(r['\u76ee\u6a19\u306e\u78ba\u8a8d'] || ''), goalCheckAt: fmtDate_(r['\u76ee\u6a19\u306e\u78ba\u8a8d\u65e5']),
+    noLimit: noLimit_(r),
     judge: {
       at: fmtDate_(r['\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u65e5']), values: String(r['\u5ef6\u9577\u4fdd\u8a3c \u6e2c\u5b9a\u5024'] || ''),
       weeks: String(r['\u5ef6\u9577\u4fdd\u8a3c \u8a18\u9332\u9031\u6570'] || ''), result: String(r['\u5ef6\u9577\u4fdd\u8a3c \u5224\u5b9a'] || '')
@@ -174,7 +175,10 @@ function courseEnd_(r) {
 function monthEnd_(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
 const joining_ = r => /\u53c2\u52a0\u3059\u308b/.test(String(r['\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b'] || '')) && String(r['\u5229\u7528'] || '') !== '\u5352\u696d\u751f';
 // \u30b5\u30dd\u30fc\u30c8\uff08\u30c1\u30e3\u30c3\u30c8\uff09\u306e\u7d42\u4e86\u65e5\uff1aSTANDARD 3\u30f6\u6708\u30fbVIP 6\u30f6\u6708\uff08\u5ef6\u9577\u4fdd\u8a3c\u3067+3\u30f6\u6708\u3001\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u306a\u3089\u6708\u672b\u307e\u3067\uff09
+// \u300c\u30b5\u30dd\u30fc\u30c8\u671f\u9650\u300d\u304c\u300c\u306a\u3057\u300d\u306e\u4eba\uff080\u671f\u751f\u306a\u3069\uff09\u306f\u3001\u671f\u9650\u30fb\u7d42\u4e86\u306e\u304a\u77e5\u3089\u305b\u30fb\u5ef6\u9577\u4fdd\u8a3c\u306e\u5bfe\u8c61\u5916\u306b\u3057\u3066\u3001\u305a\u3063\u3068\u4f7f\u3048\u308b\u3088\u3046\u306b\u3059\u308b
+function noLimit_(r) { return /\u306a\u3057/.test(String(r['\u30b5\u30dd\u30fc\u30c8\u671f\u9650'] || '')); }
 function supportEnd_(r) {
+  if (noLimit_(r)) return null;
   const vip = String(r['\u30d7\u30e9\u30f3'] || '') === 'VIP';
   let e = parseYmd_(fmtDate_(r[vip ? '6\u30f6\u6708\u306e\u65e5\uff08\u652f\u6255\u65e5\u304b\u3089\uff09' : '3\u30f6\u6708\u306e\u65e5\uff08\u652f\u6255\u65e5\u304b\u3089\uff09']));
   if (!e) return null;
@@ -186,6 +190,7 @@ function courseOver_(r) {
   const s = String(r['\u5229\u7528'] || '');
   if (s === '\u5352\u696d\u751f') return false;
   if (s === '\u7d42\u4e86') return true;
+  if (noLimit_(r)) return false;
   const e = courseEnd_(r);
   return !!(e && ymd_(e) < ymd_(new Date()));
 }
@@ -837,7 +842,7 @@ function setup() {
   const step = (label, fn) => { try { fn(); Logger.log('OK  ' + label); } catch (e) { Logger.log('NG  ' + label + '\uff1a' + e.message); } };
   step('\u30d7\u30ed\u30d1\u30c6\u30a3\u306e\u67a0', () => ['LINE_CHANNEL_ID', 'ADMIN_KEY', 'ANTHROPIC_API_KEY', 'LINE_MESSAGING_TOKEN', 'SLACK_WEBHOOK_URL'].forEach(k => { if (prop_(k) === null) PropertiesService.getScriptProperties().setProperty(k, ''); }));
   step('\u898b\u51fa\u3057\u306e\u8ffd\u52a0', () => {
-    ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f'].concat(JUDGE_HEAD, REMIND_HEAD));
+    ensureHeaders_(SH.member, ['\u76ee\u6a19\u306e\u671f'].concat(JUDGE_HEAD, REMIND_HEAD, ['\u30b5\u30dd\u30fc\u30c8\u671f\u9650']));
     ensureHeaders_(SH.goalLog, GOAL_HEAD);
     ensureHeaders_(SH.record, ['\u65e5\u4ed8', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u9031', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2460', '\u30b9\u30c8\u30ec\u30c3\u30c1\u2461', '\u30c8\u30ec\u30fc\u30cb\u30f3\u30b0', '\u898b\u305f\u52d5\u753b', '\u93e1\u30c1\u30a7\u30c3\u30af', '\u8a18\u93321', '\u8a18\u93322', '\u8a18\u93323', '\u3072\u3068\u3053\u3068', '\u4fdd\u5b58\u65e5\u6642', '\u76ee\u6a191 \u3044\u307e', '\u76ee\u6a192 \u3044\u307e', '\u76ee\u6a193 \u3044\u307e']);
     ensureHeaders_(SH.photo, ['\u64ae\u5f71\u65e5', '\u4f1a\u54e1ID', '\u540d\u524d', 'DAY', '\u30bf\u30a4\u30df\u30f3\u30b0', '\u6b63\u9762\u306e\u5199\u771f', '\u6a2a\u5411\u304d\u306e\u5199\u771f', '\u62c5\u5f53\u30b3\u30e1\u30f3\u30c8']);
@@ -850,6 +855,7 @@ function setup() {
     put('\u30d7\u30e9\u30f3', ['STANDARD', 'VIP']);
     put('\u5229\u7528', ['\u627f\u8a8d\u5f85\u3061', '\u5229\u7528\u4e2d', '\u5352\u696d\u751f', '\u7d42\u4e86', '\u505c\u6b62']);
     put('\u5ef6\u9577\u5e0c\u671b', ['\u5ef6\u9577\u3059\u308b', '\u5ef6\u9577\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']);
+    put('\u30b5\u30dd\u30fc\u30c8\u671f\u9650', ['\u306a\u3057']);
     put('\u5352\u696d\u751f\u30b3\u30df\u30e5\u30cb\u30c6\u30a3\u53c2\u52a0\u5e0c\u671b', ['\u53c2\u52a0\u3059\u308b', '\u53c2\u52a0\u3057\u306a\u3044', '\u672a\u78ba\u8a8d']);
     put('\u76ee\u6a19\u306e\u78ba\u8a8d', GOAL_CHECK);
     ms.setFrozenColumns(2);
