@@ -965,15 +965,41 @@ function vimeoEmbed(url) {
   const h = m[2] || m[3];
   return 'https://player.vimeo.com/video/' + m[1] + '?' + (h ? 'h=' + h + '&' : '') + 'autoplay=1&title=0&byline=0&portrait=0&dnt=1';
 }
+const FS_ICON = '<svg class="i-fs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M3 15v4a2 2 0 0 0 2 2h4"/></svg>'
+  + '<svg class="i-ex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h4a2 2 0 0 0 2-2V3M21 9h-4a2 2 0 0 1-2-2V3M15 21v-4a2 2 0 0 1 2-2h4M9 21v-4a2 2 0 0 0-2-2H3"/></svg>';
+
 function openPlayer(url, title) {
   const src = vimeoEmbed(url); if (!src) return false;
   const box = document.createElement('div'); box.className = 'player-wrap'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', '動画');
-  box.innerHTML = `<div class="player-card"><div class="player-h"><b>${esc(title || '動画')}</b><button type="button" class="player-x" aria-label="閉じる">×</button></div>
+  box.innerHTML = `<div class="player-card"><div class="player-h"><b>${esc(title || '動画')}</b><button type="button" class="player-fs" aria-label="全画面にする">${FS_ICON}</button><button type="button" class="player-x" aria-label="閉じる">×</button></div>
     <div class="player-v"><iframe src="${esc(src)}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen title="${esc(title || '動画')}"></iframe></div>
     <div class="player-f"><span>再生できないときは</span><a href="${esc(url)}" target="_blank" rel="noopener">Vimeoで開く</a></div></div>`;
   document.body.appendChild(box); document.body.style.overflow = 'hidden';
-  const close = () => { box.remove(); document.body.style.overflow = ''; };
-  box.addEventListener('click', ev => { if (ev.target === box || ev.target.closest('.player-x')) close(); });
+  const card = box.querySelector('.player-card'), fsBtn = box.querySelector('.player-fs');
+  // 本物の全画面（ブラウザの枠も消える）に対応している端末ではそれを使い、
+  // 対応していない端末（iPhone・LINEのアプリ内ブラウザなど）では CSS で画面いっぱいにする
+  const nativeOn = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const exitNative = () => { const ex = document.exitFullscreen || document.webkitExitFullscreen; if (nativeOn() && ex) { try { Promise.resolve(ex.call(document)).catch(() => {}); } catch (e) { /* 閉じられなくても続ける */ } } };
+  const setFs = on => {
+    box.classList.toggle('fs', on);
+    fsBtn.setAttribute('aria-label', on ? '全画面をやめる' : '全画面にする');
+    if (on) { const rq = card.requestFullscreen || card.webkitRequestFullscreen; if (rq) { try { Promise.resolve(rq.call(card)).catch(() => {}); } catch (e) { /* 対応していない端末は CSS の全画面だけ */ } } }
+    else exitNative();
+  };
+  // 本物の全画面を端末の操作（Esc・スワイプ）で抜けたときも表示をあわせる
+  const onFsChange = () => { if (!nativeOn() && box.classList.contains('fs')) setFs(false); };
+  const onKey = ev => { if (ev.key !== 'Escape') return; if (box.classList.contains('fs')) setFs(false); else close(); };
+  const close = () => {
+    document.removeEventListener('fullscreenchange', onFsChange); document.removeEventListener('webkitfullscreenchange', onFsChange);
+    document.removeEventListener('keydown', onKey);
+    exitNative(); box.remove(); document.body.style.overflow = '';
+  };
+  document.addEventListener('fullscreenchange', onFsChange); document.addEventListener('webkitfullscreenchange', onFsChange);
+  document.addEventListener('keydown', onKey);
+  box.addEventListener('click', ev => {
+    if (ev.target.closest('.player-fs')) { setFs(!box.classList.contains('fs')); return; }
+    if (ev.target === box || ev.target.closest('.player-x')) close();
+  });
   return true;
 }
 

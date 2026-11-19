@@ -425,6 +425,36 @@ nav.tabs[hidden],nav.tabs button[hidden]{display:none}
 .player-v iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .player-f{display:flex;justify-content:flex-end;gap:8px;padding:8px 14px 12px;font-size:12px;color:var(--muted)}
 .player-f a{color:var(--primary);font-weight:700}
+/* 全画面ボタン */
+.player-fs{flex:none;width:40px;height:40px;border-radius:50%;border:0;background:var(--surface2);color:var(--ink);display:grid;place-items:center}
+.player-fs svg{width:19px;height:19px}
+.player-fs .i-ex{display:none}
+.player-wrap.fs .player-fs .i-fs{display:none}
+.player-wrap.fs .player-fs .i-ex{display:block}
+/* 全画面表示：本物の全画面に対応していない端末（iPhone・LINEのアプリ内ブラウザ）でも画面いっぱいにする */
+.player-wrap.fs{padding:0}
+.player-wrap.fs .player-card{width:100%;height:100%;max-width:none;border-radius:0;background:#000;box-shadow:none;display:flex;flex-direction:column}
+.player-wrap.fs .player-h{color:#fff;padding:max(8px,env(safe-area-inset-top)) 10px 8px 14px}
+.player-wrap.fs .player-fs,.player-wrap.fs .player-x{background:rgba(255,255,255,.18);color:#fff}
+.player-wrap.fs .player-v{flex:1;aspect-ratio:auto;min-height:0}
+.player-wrap.fs .player-f{display:none}
+/* 本物の全画面になったとき、角丸や overflow:hidden で映像が切り取られないようにする */
+.player-card:fullscreen{width:100%;height:100%;max-width:none;border-radius:0;overflow:visible;background:#000;display:flex;flex-direction:column}
+.player-card:fullscreen .player-v{flex:1;aspect-ratio:auto;min-height:0}
+.player-card:fullscreen .player-f{display:none}
+.player-card:-webkit-full-screen{width:100%;height:100%;max-width:none;border-radius:0;overflow:visible;background:#000;display:flex;flex-direction:column}
+.player-card:-webkit-full-screen .player-v{flex:1;aspect-ratio:auto;min-height:0}
+.player-card:-webkit-full-screen .player-f{display:none}
+/* スマホを横向きにしたら、ボタンを押さなくても画面いっぱいで見られるようにする */
+@media (orientation:landscape) and (max-height:520px){
+  .player-wrap{padding:0}
+  .player-wrap .player-card{width:100%;height:100%;max-width:none;border-radius:0;background:#000;box-shadow:none;display:flex;flex-direction:column}
+  .player-wrap .player-h{color:#fff;padding:6px 8px 6px 12px}
+  .player-wrap .player-fs,.player-wrap .player-x{background:rgba(255,255,255,.18);color:#fff;width:34px;height:34px}
+  .player-wrap .player-h b{font-size:13px}
+  .player-wrap .player-v{flex:1;aspect-ratio:auto;min-height:0}
+  .player-wrap .player-f{display:none}
+}
 .cmp-note{margin:-4px 14px 8px;font-size:11px;color:var(--muted)}
 .pick button small{display:block;font-size:10px;font-weight:400;opacity:.75}
 .ph-manage{margin:0}
