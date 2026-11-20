@@ -143,9 +143,10 @@ const joining = () => /参加する/.test(S.data.member.community) && !isAlum();
 
 // ---------- 毎月の中間目標と見直し ----------
 const mStart = () => parseD(S.data.member.start);
-// 延長保証の「週」の起点＝支払日（起算日）。契約書 第9条第2項：起算日を1日目として7日ごと、判定期間も起算日から13週／26週。
-// ※ S.day / S.week（DAY番号・ロードマップの週・動画の割り当て）は、これまでどおり開始日（DAY1）から数える。
-const gStart = () => parseD(S.data.member.paid) || parseD(S.data.member.start);
+// 延長保証の「週」の起点＝開始日（DAY1）＝会員サイトに登録した日。
+// 着金の確認からリンクを渡すまで、また会員が登録するまでに日が空くことがあるため、運用に合わせて開始日から数える。
+// ※ サポート期間（3ヶ月・6ヶ月の日）と受講期間の終わりは、契約書どおり支払日（起算日）から計算されたシートの値を使う。
+const gStart = () => parseD(S.data.member.start) || parseD(S.data.member.paid);
 const gDay = () => { const st = gStart(); return st ? dayDiff(S.today, st) + 1 : 0; };
 const gWeek = () => { const d = gDay(); return d >= 1 ? Math.ceil(d / 7) : 0; };
 const monthDate = n => { const st = mStart(); return st ? addMonths(st, n) : null; };
