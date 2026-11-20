@@ -406,7 +406,7 @@ function hero(sub) {
     <div class="chips">${chips.map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div>${sub || ''}
   </div>${spine(prog)}</div>
   <div class="bar" aria-hidden="true"><i style="width:${(prog * 100).toFixed(1)}%"></i></div>
-  <div class="barlbl"><span>スタート</span><span class="num">${Math.round(prog * 100)}%</span><span>卒業 DAY182</span></div></section>`;
+  <div class="barlbl"><span>スタート</span><span class="num">${Math.round(prog * 100)}%</span><span>次のステージへ DAY182</span></div></section>`;
 }
 
 function zoomCard() {
